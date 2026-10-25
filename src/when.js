@@ -20,49 +20,57 @@ export const weekStart = (s) => { const d = parse(s); d.setDate(d.getDate() - d.
 const shortDate = (s) => { const [, m, d] = s.split('-'); return `${+d}/${+m}`; };
 
 // What a task's "when" means right now.
-// eff: 'today' | 'week' | 'next' | 'soon' | 'date' | null   (the effective period, relative to today)
-// overdue: the chosen period has passed and the task is not done
-// rank: for sorting, smaller = more pressing (0 overdue, 1 today, 2 this week, 3 next week, 4 later/soon, 5 none)
+// kind: what the user chose. eff: the time bucket the task falls in today:
+//   'today' | 'week' | 'next' | 'soon' | 'date' | null
+// overdue: the chosen time has passed and the task is not done.
+// dateText: the target date to show next to "next week" / "soon" (they carry a real date, see whenFields).
+// rank: for sorting, smaller = more pressing (0 overdue, 1 today, 2 this week, 3 next week, 4 later, 5 none).
 export function whenInfo(t, today = todayStr()) {
-  const none = { kind: null, eff: null, label: '', emoji: '', overdue: false, rank: 5 };
+  const none = { kind: null, eff: null, label: '', emoji: '', overdue: false, rank: 5, dateText: '' };
   const kind = t.whenKind;
   if (!kind) return none;
   const done = !!t.done;
   const thisWeek = weekStart(today);
   const nextWeek = addDays(thisWeek, 7);
-  const make = (eff, label, emoji, overdue, rank) => ({ kind, eff, label, emoji, overdue: overdue && !done, rank: overdue && !done ? 0 : rank });
-
-  if (kind === 'soon') return make('soon', 'בקרוב', '🔜', false, 4);
+  const make = (eff, label, emoji, overdue, rank, dateText = '') =>
+    ({ kind, eff, label, emoji, overdue: overdue && !done, rank: overdue && !done ? 0 : rank, dateText });
 
   if (kind === 'today') {
     const anchor = t.whenDate || today;
-    return anchor < today ? make('today', 'היום', '☀️', true, 1) : make('today', 'היום', '☀️', false, 1);
+    return make('today', 'היום', '☀️', anchor < today, 1);
   }
 
-  if (kind === 'week' || kind === 'next') {
+  // "this week" remembers the day it was chosen and ends on that week's Saturday
+  if (kind === 'week') {
     const anchor = t.whenDate || today;
-    const period = kind === 'week' ? weekStart(anchor) : addDays(weekStart(anchor), 7);
-    if (period < thisWeek) return make(kind === 'week' ? 'week' : 'next', kind === 'week' ? 'השבוע' : 'בשבוע הבא', kind === 'week' ? '📅' : '⏭️', true, 2);
-    if (period === thisWeek) return make('week', 'השבוע', '📅', false, 2); // "next week" has rolled into the current week
-    return make('next', 'בשבוע הבא', '⏭️', false, 3);
+    const period = weekStart(anchor);
+    if (period < thisWeek) return make('week', 'השבוע', '📅', true, 2);
+    return make('week', 'השבוע', '📅', false, 2);
   }
 
-  if (kind === 'date' && t.whenDate) {
-    const d = t.whenDate;
-    if (d < today) return make('date', shortDate(d), '🗓️', true, 2);
-    if (d === today) return make('today', 'היום', '☀️', false, 1);
-    if (weekStart(d) === thisWeek) return make('week', shortDate(d), '🗓️', false, 2);
-    if (weekStart(d) === nextWeek) return make('next', shortDate(d), '🗓️', false, 3);
-    return make('date', shortDate(d), '🗓️', false, 4);
-  }
-  return none;
+  // everything else carries a target date: a chosen date, or "next week" (+7 days) / "soon" (+14 days)
+  const target = kind === 'date' ? t.whenDate
+    : kind === 'next' ? (t.whenDate || addDays(today, 7))
+    : kind === 'soon' ? (t.whenDate || addDays(today, 14)) : null;
+  if (!target) return none;
+  const shown = kind === 'date' ? '' : shortDate(target);
+  const own = kind === 'next' ? ['בשבוע הבא', '⏭️'] : kind === 'soon' ? ['בקרוב', '🔜'] : [shortDate(target), '🗓️'];
+
+  if (target < today) return make('date', own[0], own[1], true, 2, shown);
+  if (target === today) return make('today', 'היום', '☀️', false, 1);
+  const ws = weekStart(target);
+  if (ws === thisWeek) return kind === 'date' ? make('week', own[0], own[1], false, 2) : make('week', 'השבוע', '📅', false, 2, shown);
+  if (ws === nextWeek) return make('next', own[0], own[1], false, 3, shown);
+  return make('date', own[0], own[1], false, 4, shown);
 }
 
 // Which fields to store when the user picks a "when". kind null clears it.
+// "next week" gets a date a week from today, "soon" a date two weeks from today (they can be edited afterwards).
 export function whenFields(kind, date, today = todayStr()) {
   if (!kind) return { whenKind: null, whenDate: null, today: false };
   if (kind === 'date') return { whenKind: 'date', whenDate: date || today, today: false };
-  if (kind === 'soon') return { whenKind: 'soon', whenDate: null, today: false };
+  if (kind === 'next') return { whenKind: 'next', whenDate: addDays(today, 7), today: false };
+  if (kind === 'soon') return { whenKind: 'soon', whenDate: addDays(today, 14), today: false };
   return { whenKind: kind, whenDate: today, today: kind === 'today' };
 }
 
@@ -75,6 +83,6 @@ export function matchesWhen(t, key, today = todayStr()) {
   if (key === 'today') return i.eff === 'today';
   if (key === 'week') return i.eff === 'today' || i.eff === 'week';
   if (key === 'next') return i.eff === 'next';
-  if (key === 'soon') return i.eff === 'soon';
+  if (key === 'soon') return t.whenKind === 'soon';
   return false;
 }

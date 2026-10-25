@@ -67,7 +67,7 @@ const whenKey = (t) => { const i = whenInfo(t); return i.overdue ? 'overdue' : i
 // earliest date found in a task's date columns (a rough "due date")
 const dueOf = (state, t) => {
   const cols = state.tables[t.tableId]?.columns.filter((c) => c.type === 'date') || [];
-  const dates = cols.map((c) => t.vals[c.id]).filter(Boolean).concat(t.whenKind === 'date' && t.whenDate ? [t.whenDate] : []).sort();
+  const dates = cols.map((c) => t.vals[c.id]).filter(Boolean).concat(['date', 'next', 'soon'].includes(t.whenKind) && t.whenDate ? [t.whenDate] : []).sort();
   return dates[0] || null;
 };
 

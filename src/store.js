@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import * as cloud from './cloud.js';
-import { whenFields, whenInfo, todayStr } from './when.js';
+import { whenFields, whenInfo, todayStr, addDays } from './when.js';
 
 // RFC 4122 v4 UUID (the database uses uuid keys). Works on plain http too, unlike crypto.randomUUID.
 export const uid = () => {
@@ -89,6 +89,14 @@ function migrate(s) {
   if (!s.migrations?.whenField) {
     Object.values(s.tasks).forEach((t) => { if (t.today && !t.whenKind) Object.assign(t, whenFields('today')); });
     s.migrations = { ...s.migrations, whenField: true };
+  }
+  // "next week" / "soon" now carry a target date: +7 / +14 days from when they were chosen (or from today)
+  if (!s.migrations?.whenDates) {
+    Object.values(s.tasks).forEach((t) => {
+      if (t.whenKind === 'next') t.whenDate = addDays(t.whenDate || todayStr(), 7);
+      else if (t.whenKind === 'soon' && !t.whenDate) t.whenDate = addDays(todayStr(), 14);
+    });
+    s.migrations = { ...s.migrations, whenDates: true };
   }
   if (!s.migrations?.statusOptions) {
     Object.values(s.tables).forEach((t) => t.columns.forEach((c) => {
