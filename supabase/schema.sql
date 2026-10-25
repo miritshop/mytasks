@@ -1,0 +1,128 @@
+-- "היום שלי": schema for Supabase (PostgreSQL).
+-- Run once in the Supabase dashboard: SQL Editor -> New query -> paste -> Run.
+-- Safe to re-run: every statement is idempotent.
+
+-- ============ Tables ============
+-- Every row belongs to one user (owner). Row Level Security (below) makes sure
+-- a user can only ever read or change their own rows.
+
+create table if not exists public.lists (
+  id             uuid primary key,
+  owner          uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  name           text not null,
+  emoji          text,
+  color          text,
+  position       integer not null default 0,        -- order in the sidebar (top-level lists only)
+  parent_task_id uuid,                               -- set when this list is a task's own sub-table
+  columns        jsonb not null default '[]'::jsonb, -- [{id,name,type,options:[{id,label,icon,color}]}]
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+-- A task OR a category (is_group = true). Nesting is unlimited through parent_id.
+create table if not exists public.tasks (
+  id           uuid primary key,
+  owner        uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  list_id      uuid not null references public.lists(id) on delete cascade,
+  parent_id    uuid references public.tasks(id) on delete cascade,
+  title        text not null default '',
+  is_group     boolean not null default false,
+  done         boolean not null default false,
+  today        boolean not null default false,
+  priority     smallint check (priority between 1 and 3),
+  note         text not null default '',
+  reason       text not null default '',
+  icon         text not null default '',
+  vals         jsonb not null default '{}'::jsonb,  -- values of the list's custom columns {columnId: value}
+  links        jsonb not null default '[]'::jsonb,  -- graph links: [taskId]
+  sub_list_id  uuid,                                -- the task's own sub-table
+  pos          jsonb,                               -- manual position in the graph {x,y}
+  collapsed    boolean not null default false,      -- category open/closed in the table
+  g_collapsed  boolean not null default false,      -- category open/closed in the graph
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+-- Per-user app state that is not a list or a task (UI choices, dismissed hints...)
+create table if not exists public.user_settings (
+  owner      uuid primary key default auth.uid() references auth.users(id) on delete cascade,
+  data       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+-- Images attached to tasks. The file itself lives in Storage (bucket "task-images").
+create table if not exists public.attachments (
+  id         uuid primary key default gen_random_uuid(),
+  owner      uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  task_id    uuid not null references public.tasks(id) on delete cascade,
+  path       text not null,                          -- "<owner>/<task>/<file>" inside the bucket
+  name       text not null default '',
+  size       integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists tasks_owner_list_idx   on public.tasks (owner, list_id);
+create index if not exists tasks_parent_idx       on public.tasks (parent_id);
+create index if not exists tasks_vals_gin_idx     on public.tasks using gin (vals);
+create index if not exists attachments_task_idx   on public.attachments (task_id);
+create index if not exists lists_owner_pos_idx    on public.lists (owner, position);
+
+-- keep updated_at fresh
+create or replace function public.touch_updated_at() returns trigger
+language plpgsql as $$
+begin new.updated_at = now(); return new; end $$;
+
+drop trigger if exists lists_touch on public.lists;
+create trigger lists_touch before update on public.lists
+  for each row execute function public.touch_updated_at();
+drop trigger if exists tasks_touch on public.tasks;
+create trigger tasks_touch before update on public.tasks
+  for each row execute function public.touch_updated_at();
+drop trigger if exists settings_touch on public.user_settings;
+create trigger settings_touch before update on public.user_settings
+  for each row execute function public.touch_updated_at();
+
+-- ============ Security: Row Level Security ============
+-- With RLS on, the public (anon) key in the website can do nothing by itself:
+-- every query is checked against the logged-in user.
+
+alter table public.lists         enable row level security;
+alter table public.tasks         enable row level security;
+alter table public.user_settings enable row level security;
+alter table public.attachments   enable row level security;
+
+drop policy if exists "own lists"       on public.lists;
+drop policy if exists "own tasks"       on public.tasks;
+drop policy if exists "own settings"    on public.user_settings;
+drop policy if exists "own attachments" on public.attachments;
+
+create policy "own lists"       on public.lists         for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+create policy "own tasks"       on public.tasks         for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+create policy "own settings"    on public.user_settings for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+create policy "own attachments" on public.attachments   for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+
+-- ============ Image storage ============
+-- Private bucket: files are only reachable through short-lived signed links,
+-- and only inside the user's own folder ("<user id>/...").
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('task-images', 'task-images', false, 5242880,
+        array['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+on conflict (id) do update
+  set public = false, file_size_limit = 5242880,
+      allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+drop policy if exists "own images read"   on storage.objects;
+drop policy if exists "own images write"  on storage.objects;
+drop policy if exists "own images delete" on storage.objects;
+
+create policy "own images read"   on storage.objects for select to authenticated
+  using (bucket_id = 'task-images' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "own images write"  on storage.objects for insert to authenticated
+  with check (bucket_id = 'task-images' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "own images delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'task-images' and (storage.foldername(name))[1] = auth.uid()::text);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { actions, useStore, getState, TABLE_COLORS } from './store.js';
+import { actions, useStore, useSyncStatus, getState, TABLE_COLORS } from './store.js';
 import TodayView from './TodayView.jsx';
 import TableView from './TableView.jsx';
 import GraphView from './GraphView.jsx';
@@ -10,8 +10,10 @@ import { SplitBanner, SplitModal, GroupModal } from './CategoryModals.jsx';
 import { Modal, EmojiGrid, IconPicker } from './components.jsx';
 
 
-export default function App() {
+export default function App({ email, userId, imported, onSignOut }) {
   const s = useStore();
+  const sync = useSyncStatus();
+  const [importNote, setImportNote] = useState(imported);
   const [taskId, setTaskId] = useState(null);
   const [brain, setBrain] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -57,6 +59,15 @@ export default function App() {
         <button className="nav add" onClick={() => setNewTable(true)}>＋ רשימה חדשה</button>
         <span className="grow" />
         <button className="nav" onClick={() => setBrain(true)}>🧠 המוח של Claude</button>
+        <div className={`sync ${sync.status}`} title={sync.error}>
+          {sync.status === 'saving' && '⏳ שומרת…'}
+          {sync.status === 'idle' && '✓ הכל נשמר'}
+          {sync.status === 'error' && '⚠️ לא נשמר, מנסה שוב…'}
+        </div>
+        <div className="account">
+          <span className="grow" dir="ltr" title={email}>{email}</span>
+          <button className="link" onClick={onSignOut}>התנתקות</button>
+        </div>
       </aside>
       {menu && <div className="scrim" onClick={() => setMenu(false)} />}
 
@@ -98,9 +109,14 @@ export default function App() {
         </div>
       </main>
 
+      {importNote && (
+        <div className="toast" onClick={() => setImportNote(false)}>
+          ✅ העברנו את המשימות שהיו שמורות בדפדפן לחשבון שלך. עכשיו הן זמינות מכל מכשיר.
+        </div>
+      )}
       {groupId && <GroupModal id={groupId} onClose={() => setGroupId(null)} onSplit={(parentId) => setSplit({ tableId, parentId })} />}
       {split && <SplitModal tableId={split.tableId} parentId={split.parentId} manual={split.manual} onClose={() => setSplit(null)} />}
-      {taskId && <TaskModal taskId={taskId} onClose={() => setTaskId(null)} />}
+      {taskId && <TaskModal taskId={taskId} userId={userId} onClose={() => setTaskId(null)} />}
       {brain && <BrainModal onClose={() => setBrain(false)} />}
       {editList && s.tables[editList] && <ListModal id={editList} onClose={() => setEditList(null)} />}
       {newTable && (

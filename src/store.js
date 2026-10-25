@@ -1,7 +1,14 @@
 import { useSyncExternalStore } from 'react';
+import * as cloud from './cloud.js';
 
-const KEY = 'mypa-v1';
-export const uid = () => Math.random().toString(36).slice(2, 9);
+// RFC 4122 v4 UUID (the database uses uuid keys). Works on plain http too, unlike crypto.randomUUID.
+export const uid = () => {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
 export const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -66,11 +73,6 @@ function seed() {
   };
 }
 
-function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.tables) return s; } catch {}
-  return null;
-}
-
 export const STATUS_OPTIONS = [
   { label: 'חקירה', icon: '🔍', color: PALETTE[2] },
   { label: 'החלטה', icon: '⚖️', color: PALETTE[4] },
@@ -82,29 +84,162 @@ export const addStatusOptions = (options) => {
     if (!options.some((x) => x.label === o.label)) options.push({ id: uid(), ...o });
   });
 };
+// one-time, additive data migrations (flags live in state.migrations, which syncs with the account)
 function migrate(s) {
   if (!s.migrations?.statusOptions) {
     Object.values(s.tables).forEach((t) => t.columns.forEach((c) => {
       if (c.type === 'select' && c.name === 'סטטוס') { c.options = c.options || []; addStatusOptions(c.options); }
     }));
     s.migrations = { ...s.migrations, statusOptions: true };
-    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {}
   }
   return s;
 }
 
-let state = migrate(load() || seed());
+// ---------- state + cloud sync ----------
+// The app works on one in-memory `state`. Every change goes through commit(), which updates the screen
+// at once and then (debounced) writes only what changed to the database (see cloud.js).
+const EMPTY = () => ({ tableOrder: [], tables: {}, tasks: {}, ui: { tableId: null, view: 'today' } });
+let state = EMPTY();
+let synced = EMPTY(); // what the server is known to hold
+let userId = null;
 const subs = new Set();
+
+let syncState = { status: 'idle', error: '' }; // idle | saving | error
+const syncSubs = new Set();
+const setSync = (p) => { syncState = { ...syncState, ...p }; syncSubs.forEach((f) => f()); };
+export const useSyncStatus = () =>
+  useSyncExternalStore((cb) => { syncSubs.add(cb); return () => syncSubs.delete(cb); }, () => syncState);
+
+// Which list/view is open is per device, not per account
+const uiKey = () => `mypa-ui-${userId}`;
+const readLocalUI = () => { try { return JSON.parse(localStorage.getItem(uiKey())) || {}; } catch { return {}; } };
+const saveLocalUI = () => {
+  if (!userId) return;
+  try { localStorage.setItem(uiKey(), JSON.stringify({ tableId: state.ui.tableId, view: state.ui.view })); } catch {}
+};
+
+let timer = null;
+let flushing = null;
+let again = false;
+const schedule = () => { clearTimeout(timer); timer = setTimeout(flush, 500); };
+
+export function flush() {
+  clearTimeout(timer);
+  if (!userId) return Promise.resolve();
+  if (flushing) { again = true; return flushing; }
+  flushing = (async () => {
+    try {
+      do {
+        again = false;
+        const snapshot = state;
+        const ops = cloud.diff(synced, snapshot);
+        if (!ops.empty) { setSync({ status: 'saving' }); await cloud.push(ops, userId); }
+        synced = snapshot;
+      } while (again || synced !== state);
+      setSync({ status: 'idle', error: '' });
+    } catch (e) {
+      console.error('save failed', e);
+      setSync({ status: 'error', error: e?.message || '' });
+      timer = setTimeout(flush, 5000); // keep trying until it goes through
+    } finally {
+      flushing = null;
+    }
+  })();
+  return flushing;
+}
+
 function commit(fn) {
   const d = structuredClone(state);
   fn(d);
   state = d;
-  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+  saveLocalUI();
   subs.forEach((f) => f());
+  schedule();
 }
 export const getState = () => state;
 export const useStore = () =>
   useSyncExternalStore((cb) => { subs.add(cb); return () => subs.delete(cb); }, () => state);
+
+// ids of the old browser-only data are short random strings; the database needs UUIDs
+function remapIds(s) {
+  const map = {};
+  [...Object.keys(s.tables), ...Object.keys(s.tasks)].forEach((id) => { map[id] = uid(); });
+  const out = { tableOrder: s.tableOrder.map((i) => map[i]).filter(Boolean), tables: {}, tasks: {}, migrations: s.migrations || {},
+    ui: { ...s.ui, tableId: map[s.ui?.tableId] || null } };
+  Object.values(s.tables).forEach((t) => {
+    out.tables[map[t.id]] = { ...t, id: map[t.id], parentTaskId: map[t.parentTaskId] || null };
+  });
+  Object.values(s.tasks).forEach((t) => {
+    if (!map[t.tableId]) return;
+    out.tasks[map[t.id]] = { ...t, id: map[t.id], tableId: map[t.tableId], parentId: map[t.parentId] || null,
+      links: (t.links || []).map((l) => map[l]).filter(Boolean), subTableId: map[t.subTableId] || null };
+  });
+  return out;
+}
+
+const readLegacy = () => {
+  try { const s = JSON.parse(localStorage.getItem('mypa-v1')); return s && s.tables && s.tasks ? s : null; } catch { return null; }
+};
+
+function buildState(data, ui = {}) {
+  const tableId = data.tables[ui.tableId] ? ui.tableId : data.tableOrder[0] || null;
+  return {
+    tableOrder: data.tableOrder, tables: data.tables, tasks: data.tasks, migrations: data.settings?.migrations || {},
+    ui: { tableId, view: ui.view || 'today', hideSuggest: !!data.settings?.hideSuggest, splitDismiss: data.settings?.splitDismiss || {} },
+  };
+}
+
+// Load the signed-in user's data. A brand-new account gets the old browser data (if any) or the demo data.
+export async function startSession(id) {
+  userId = id;
+  const data = await cloud.fetchAll();
+  let next;
+  let imported = false;
+  if (!data.settings && !data.tableOrder.length) {
+    const legacy = readLegacy();
+    imported = !!legacy;
+    next = legacy ? remapIds(legacy) : seed();
+    next.ui = { ...next.ui, ...(readLocalUI().view ? readLocalUI() : {}) };
+    synced = { ...EMPTY(), noSettings: true };
+  } else {
+    next = buildState(data, readLocalUI());
+    synced = { ...structuredClone(next), noSettings: !data.settings };
+  }
+  state = migrate(next);
+  saveLocalUI();
+  subs.forEach((f) => f());
+  setSync({ status: 'idle', error: '' });
+  schedule();
+  return { imported };
+}
+
+export async function endSession() {
+  if (userId) { try { await flush(); } catch {} }
+  clearTimeout(timer);
+  userId = null;
+  state = EMPTY();
+  synced = EMPTY();
+  subs.forEach((f) => f());
+}
+
+// Pick up changes made from another device (only when nothing is waiting to be saved)
+async function refresh() {
+  if (!userId || flushing || synced !== state) return;
+  try {
+    const server = buildState(await cloud.fetchAll(), state.ui);
+    if (synced !== state || cloud.diff(server, state).empty) return;
+    if (state.brainMessage) server.brainMessage = state.brainMessage;
+    state = synced = server;
+    subs.forEach((f) => f());
+  } catch {}
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
+  window.addEventListener('online', () => { if (syncState.status === 'error') flush(); });
+  window.addEventListener('beforeunload', (e) => {
+    if (userId && (flushing || synced !== state)) { e.preventDefault(); e.returnValue = ''; }
+  });
+}
 
 // ---------- helpers ----------
 const removeTableInner = (d, tableId) => {
@@ -198,7 +333,8 @@ export const actions = {
   importJSON: (txt) => {
     const s = JSON.parse(txt);
     if (!s.tables || !s.tasks) throw new Error('bad file');
-    commit((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, s); });
+    const fresh = remapIds(s);
+    commit((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, fresh); });
   },
   reset: () => commit((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, seed()); }),
   dismissBrain: () => commit((d) => { delete d.brainMessage; }),

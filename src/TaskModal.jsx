@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { actions, useStore, guessIcon, groupOptions } from './store.js';
 import { Modal, Cell, Check, PRIORITY, IconPicker } from './components.jsx';
+import Attachments from './Attachments.jsx';
 
-export default function TaskModal({ taskId, onClose }) {
+export default function TaskModal({ taskId, userId, onClose }) {
   const s = useStore();
   const task = s.tasks[taskId];
   const [sub, setSub] = useState('');
@@ -68,6 +69,8 @@ export default function TaskModal({ taskId, onClose }) {
           <button className="btn soft template-btn" onClick={() => actions.addColumn(table.id, { name: 'תגיות', type: 'tags' })}>🏷️ הוספת תגיות</button>
         </div>
       )}
+
+      <Attachments taskId={task.id} userId={userId} />
 
       <label className="field">הערה
         <textarea rows={2} value={task.note} onChange={(e) => actions.updateTask(task.id, { note: e.target.value })} />
