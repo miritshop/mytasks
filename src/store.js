@@ -107,6 +107,7 @@ const subs = new Set();
 let syncState = { status: 'idle', error: '' }; // idle | saving | error
 const syncSubs = new Set();
 const setSync = (p) => { syncState = { ...syncState, ...p }; syncSubs.forEach((f) => f()); };
+export const getSyncState = () => syncState;
 export const useSyncStatus = () =>
   useSyncExternalStore((cb) => { syncSubs.add(cb); return () => syncSubs.delete(cb); }, () => syncState);
 
@@ -125,9 +126,9 @@ const schedule = () => { clearTimeout(timer); timer = setTimeout(flush, 500); };
 
 export function flush() {
   clearTimeout(timer);
-  if (!userId) return Promise.resolve();
+  if (!userId) return Promise.resolve(true);
   if (flushing) { again = true; return flushing; }
-  flushing = (async () => {
+  const run = async () => {
     try {
       do {
         again = false;
@@ -137,14 +138,17 @@ export function flush() {
         synced = snapshot;
       } while (again || synced !== state);
       setSync({ status: 'idle', error: '' });
+      return true;
     } catch (e) {
       console.error('save failed', e);
       setSync({ status: 'error', error: e?.message || '' });
       timer = setTimeout(flush, 5000); // keep trying until it goes through
-    } finally {
-      flushing = null;
+      return false;
     }
-  })();
+  };
+  // Clear `flushing` only AFTER it has been assigned. (Clearing it inside run() broke saving for good
+  // whenever there was nothing to save: the body finished synchronously, before the assignment.)
+  flushing = run().finally(() => { flushing = null; });
   return flushing;
 }
 

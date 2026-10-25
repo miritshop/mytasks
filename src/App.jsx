@@ -62,7 +62,7 @@ export default function App({ email, userId, imported, onSignOut }) {
         <div className={`sync ${sync.status}`} title={sync.error}>
           {sync.status === 'saving' && '⏳ שומרת…'}
           {sync.status === 'idle' && '✓ הכל נשמר'}
-          {sync.status === 'error' && '⚠️ לא נשמר, מנסה שוב…'}
+          {sync.status === 'error' && <>⚠️ לא נשמר, מנסה שוב…<br /><small dir="ltr">{sync.error}</small></>}
         </div>
         <div className="account">
           <span className="grow" dir="ltr" title={email}>{email}</span>

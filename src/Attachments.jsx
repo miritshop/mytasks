@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { uid, flush } from './store.js';
+import { uid, flush, getSyncState } from './store.js';
 import { listAttachments, uploadImage, deleteAttachment } from './cloud.js';
 
 // Images attached to a task. Files are shrunk in the browser, stored in a private bucket,
@@ -20,11 +20,13 @@ export default function Attachments({ taskId, userId }) {
     if (!files.length) return;
     setBusy(true); setErr('');
     try {
-      await flush(); // the task must exist on the server before a picture can point to it
+      // the task must exist on the server before a picture can point to it
+      if (!(await flush())) throw new Error(`המשימה עדיין לא נשמרה בשרת (${getSyncState().error || 'שגיאת שמירה'})`);
       for (const f of files) await uploadImage(f, taskId, userId, uid());
       await load();
     } catch (ex) {
-      setErr(ex.message?.includes('אינה תמונה') ? ex.message : 'ההעלאה נכשלה. נסי תמונה קטנה יותר או נסי שוב.');
+      console.error('image upload failed', ex);
+      setErr(ex.message?.includes('אינה תמונה') ? ex.message : `ההעלאה נכשלה: ${ex.message || ex.error || 'שגיאה לא ידועה'}`);
     }
     setBusy(false);
   };
