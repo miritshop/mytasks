@@ -4,6 +4,7 @@ import TodayView from './TodayView.jsx';
 import TableView from './TableView.jsx';
 import GraphView from './GraphView.jsx';
 import FilterView from './FilterView.jsx';
+import RulesModal from './Rules.jsx';
 import TaskModal from './TaskModal.jsx';
 import BrainModal from './BrainModal.jsx';
 import { SplitBanner, SplitModal, GroupModal } from './CategoryModals.jsx';
@@ -17,6 +18,7 @@ export default function App({ email, userId, imported, onSignOut }) {
   const [taskId, setTaskId] = useState(null);
   const [brain, setBrain] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [newTable, setNewTable] = useState(false);
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('📋');
@@ -58,6 +60,7 @@ export default function App({ email, userId, imported, onSignOut }) {
         })}
         <button className="nav add" onClick={() => setNewTable(true)}>＋ רשימה חדשה</button>
         <span className="grow" />
+        <button className="nav" onClick={() => { setRulesOpen(true); setMenu(false); }}>📏 הכללים שלי</button>
         <button className="nav" onClick={() => setBrain(true)}>🧠 המוח של Claude</button>
         <div className={`sync ${sync.status}`} title={sync.error}>
           {sync.status === 'saving' && '⏳ שומרת…'}
@@ -117,6 +120,7 @@ export default function App({ email, userId, imported, onSignOut }) {
       {groupId && <GroupModal id={groupId} onClose={() => setGroupId(null)} onSplit={(parentId) => setSplit({ tableId, parentId })} />}
       {split && <SplitModal tableId={split.tableId} parentId={split.parentId} manual={split.manual} onClose={() => setSplit(null)} />}
       {taskId && <TaskModal taskId={taskId} userId={userId} onClose={() => setTaskId(null)} />}
+      {rulesOpen && <RulesModal onClose={() => setRulesOpen(false)} />}
       {brain && <BrainModal onClose={() => setBrain(false)} />}
       {editList && s.tables[editList] && <ListModal id={editList} onClose={() => setEditList(null)} />}
       {newTable && (

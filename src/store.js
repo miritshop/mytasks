@@ -21,7 +21,7 @@ const opt = (label, i) => ({ id: uid(), label, color: PALETTE[i % PALETTE.length
 
 const newTask = (tableId, title, extra = {}) => ({
   id: uid(), tableId, parentId: null, title, done: false, today: false, priority: null, note: '',
-  reason: '', vals: {}, links: [], subTableId: null, pos: null, createdAt: Date.now(), ...extra,
+  reason: '', vals: {}, links: [], subTableId: null, pos: null, estimateMin: null, ai: {}, createdAt: Date.now(), ...extra,
 });
 
 function seed() {
@@ -86,6 +86,8 @@ export const addStatusOptions = (options) => {
 };
 // one-time, additive data migrations (flags live in state.migrations, which syncs with the account)
 function migrate(s) {
+  s.rules = s.rules || {};
+  s.ruleOrder = s.ruleOrder || [];
   if (!s.migrations?.statusOptions) {
     Object.values(s.tables).forEach((t) => t.columns.forEach((c) => {
       if (c.type === 'select' && c.name === 'סטטוס') { c.options = c.options || []; addStatusOptions(c.options); }
@@ -98,7 +100,7 @@ function migrate(s) {
 // ---------- state + cloud sync ----------
 // The app works on one in-memory `state`. Every change goes through commit(), which updates the screen
 // at once and then (debounced) writes only what changed to the database (see cloud.js).
-const EMPTY = () => ({ tableOrder: [], tables: {}, tasks: {}, ui: { tableId: null, view: 'today' } });
+const EMPTY = () => ({ tableOrder: [], tables: {}, tasks: {}, rules: {}, ruleOrder: [], ui: { tableId: null, view: 'today' } });
 let state = EMPTY();
 let synced = EMPTY(); // what the server is known to hold
 let userId = null;
@@ -168,7 +170,7 @@ export const useStore = () =>
 function remapIds(s) {
   const map = {};
   [...Object.keys(s.tables), ...Object.keys(s.tasks)].forEach((id) => { map[id] = uid(); });
-  const out = { tableOrder: s.tableOrder.map((i) => map[i]).filter(Boolean), tables: {}, tasks: {}, migrations: s.migrations || {},
+  const out = { tableOrder: s.tableOrder.map((i) => map[i]).filter(Boolean), tables: {}, tasks: {}, rules: {}, ruleOrder: [], migrations: s.migrations || {},
     ui: { ...s.ui, tableId: map[s.ui?.tableId] || null } };
   Object.values(s.tables).forEach((t) => {
     out.tables[map[t.id]] = { ...t, id: map[t.id], parentTaskId: map[t.parentTaskId] || null };
@@ -188,7 +190,7 @@ const readLegacy = () => {
 function buildState(data, ui = {}) {
   const tableId = data.tables[ui.tableId] ? ui.tableId : data.tableOrder[0] || null;
   return {
-    tableOrder: data.tableOrder, tables: data.tables, tasks: data.tasks, migrations: data.settings?.migrations || {},
+    tableOrder: data.tableOrder, tables: data.tables, tasks: data.tasks, rules: data.rules || {}, ruleOrder: data.ruleOrder || [], migrations: data.settings?.migrations || {},
     ui: { tableId, view: ui.view || 'today', hideSuggest: !!data.settings?.hideSuggest, splitDismiss: data.settings?.splitDismiss || {} },
   };
 }
@@ -253,6 +255,7 @@ const removeTableInner = (d, tableId) => {
   if (!d.tables[tableId]) return;
   Object.values(d.tasks).filter((x) => x.tableId === tableId).forEach((x) => removeTaskInner(d, x.id));
   delete d.tables[tableId];
+  Object.values(d.rules || {}).filter((r) => r.listId === tableId).forEach((r) => { delete d.rules[r.id]; d.ruleOrder = d.ruleOrder.filter((i) => i !== r.id); });
   d.tableOrder = d.tableOrder.filter((i) => i !== tableId);
   if (d.ui.tableId === tableId) d.ui.tableId = d.tableOrder[0] || null;
 };
@@ -265,6 +268,13 @@ const removeTaskInner = (d, id) => {
   Object.values(d.tasks).forEach((x) => { x.links = x.links.filter((l) => l !== id); });
 };
 
+// A value the user changes by hand is no longer "set by AI": drop its mark.
+const clearAiMarks = (t, p) => {
+  if (!t.ai) return;
+  if ('priority' in p) delete t.ai.priority;
+  if ('estimateMin' in p) delete t.ai.estimate;
+};
+
 // ---------- actions ----------
 export const actions = {
   setUI: (p) => commit((d) => Object.assign(d.ui, p)),
@@ -273,8 +283,33 @@ export const actions = {
     commit((d) => { d.tasks[t.id] = t; });
     return t.id;
   },
-  updateTask: (id, p) => commit((d) => { if (d.tasks[id]) Object.assign(d.tasks[id], p); }),
-  setVal: (id, col, v) => commit((d) => { if (d.tasks[id]) d.tasks[id].vals[col] = v; }),
+  updateTask: (id, p) => commit((d) => {
+    const t = d.tasks[id];
+    if (!t) return;
+    Object.assign(t, p);
+    clearAiMarks(t, p);
+  }),
+  setVal: (id, col, v) => commit((d) => {
+    const t = d.tasks[id];
+    if (!t) return;
+    t.vals[col] = v;
+    if (t.ai?.vals) delete t.ai.vals[col];
+    if (t.ai?.tags && Array.isArray(v)) t.ai.tags = t.ai.tags.filter((o) => v.includes(o)); // tags removed by hand lose their mark
+  }),
+  // "✓ approve": keep the AI's values but remove the marks
+  approveAi: (id) => commit((d) => { if (d.tasks[id]) d.tasks[id].ai = {}; }),
+  addRule: (text = '', listId = null) => {
+    const id = uid();
+    commit((d) => { d.rules[id] = { id, text, listId, enabled: true }; d.ruleOrder.push(id); });
+    return id;
+  },
+  updateRule: (id, p) => commit((d) => { if (d.rules[id]) Object.assign(d.rules[id], p); }),
+  deleteRule: (id) => commit((d) => { delete d.rules[id]; d.ruleOrder = d.ruleOrder.filter((i) => i !== id); }),
+  moveRule: (id, dir) => commit((d) => {
+    const i = d.ruleOrder.indexOf(id), j = i + dir;
+    if (i < 0 || j < 0 || j >= d.ruleOrder.length) return;
+    [d.ruleOrder[i], d.ruleOrder[j]] = [d.ruleOrder[j], d.ruleOrder[i]];
+  }),
   toggleDone: (id) => commit((d) => { if (d.tasks[id]) d.tasks[id].done = !d.tasks[id].done; }),
   deleteTask: (id) => commit((d) => removeTaskInner(d, id)),
   moveTask: (id, tableId) => commit((d) => {
@@ -523,6 +558,7 @@ Object.assign(actions, {
       if (!d.tasks[parentId] || d.tasks[parentId].tableId !== t.tableId) return;
     }
     t.parentId = parentId || null;
+    if (t.ai) delete t.ai.parent;
   }),
   applySplit: (tableId, parentId, groups) => commit((d) => {
     groups.forEach((g) => {

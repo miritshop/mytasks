@@ -139,7 +139,12 @@ export default function Root() {
     setLoadErr('');
     startSession(userId)
       .then((r) => { if (!cancelled) { setImported(r.imported); setReady(true); } })
-      .catch((e) => { console.error(e); if (!cancelled) setLoadErr('לא הצלחנו לטעון את הנתונים. בדקי חיבור לאינטרנט ונסי שוב.'); });
+      .catch((e) => {
+        console.error(e);
+        if (!cancelled) setLoadErr(e.message === 'SCHEMA_OUTDATED'
+          ? 'בסיס הנתונים צריך עדכון: להריץ מחדש את supabase/schema.sql ב-SQL Editor של Supabase.'
+          : 'לא הצלחנו לטעון את הנתונים. בדקי חיבור לאינטרנט ונסי שוב.');
+      });
     return () => { cancelled = true; };
   }, [userId]);
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { actions, useStore, guessIcon, groupOptions } from './store.js';
-import { Modal, Cell, Check, PRIORITY, IconPicker } from './components.jsx';
+import { Modal, Cell, Check, PRIORITY, IconPicker, EstimateCell, AiMark, hasAi } from './components.jsx';
 import Attachments from './Attachments.jsx';
 
 export default function TaskModal({ taskId, userId, onClose }) {
@@ -41,6 +41,15 @@ export default function TaskModal({ taskId, userId, onClose }) {
         </div>
         {task.reason && <p className="reason">💡 {task.reason}</p>}
       </div>
+
+      {hasAi(task) && (
+        <div className="ai-banner">
+          <AiMark /> חלק מהערכים הוצעו על ידי AI (מסומנים ב-✨). שינוי ידני מסיר את הסימון.
+          <button className="btn soft small" onClick={() => actions.approveAi(task.id)}>✓ אישור הכל</button>
+        </div>
+      )}
+
+      <div className="field inline">זמן משוער <EstimateCell task={task} /></div>
 
       {(!task.parentId || s.tasks[task.parentId]?.isGroup) && groupOptions(s, task.tableId).length > 0 && (
         <label className="field inline">בקטגוריה

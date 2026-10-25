@@ -126,3 +126,34 @@ create policy "own images write"  on storage.objects for insert to authenticated
   with check (bucket_id = 'task-images' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "own images delete" on storage.objects for delete to authenticated
   using (bucket_id = 'task-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============ v2: time estimates, AI provenance, personal AI rules ============
+-- (idempotent; safe to run on an existing database)
+
+alter table public.tasks add column if not exists estimate_min integer
+  check (estimate_min is null or estimate_min between 0 and 1440);          -- estimated minutes
+alter table public.tasks add column if not exists ai jsonb not null default '{}'::jsonb;
+  -- which values were set by AI (and not yet approved/changed by the user):
+  -- {"priority":true,"estimate":true,"parent":true,"tags":[optionId],"vals":{columnId:true}}
+
+-- The user's own rules for the AI, e.g. "cook only when the baby is awake".
+create table if not exists public.ai_rules (
+  id         uuid primary key,
+  owner      uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  list_id    uuid references public.lists(id) on delete cascade,  -- null = applies to all lists
+  text       text not null default '',
+  enabled    boolean not null default true,
+  position   integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists ai_rules_owner_idx on public.ai_rules (owner, position);
+
+drop trigger if exists ai_rules_touch on public.ai_rules;
+create trigger ai_rules_touch before update on public.ai_rules
+  for each row execute function public.touch_updated_at();
+
+alter table public.ai_rules enable row level security;
+drop policy if exists "own rules" on public.ai_rules;
+create policy "own rules" on public.ai_rules for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());

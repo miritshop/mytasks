@@ -16,6 +16,7 @@ export const taskRow = (t) => ({
   note: t.note || '', reason: t.reason || '', icon: t.icon || '',
   vals: t.vals || {}, links: t.links || [], sub_list_id: t.subTableId || null, pos: t.pos || null,
   collapsed: !!t.collapsed, g_collapsed: !!t.gCollapsed,
+  estimate_min: t.estimateMin ?? null, ai: t.ai || {},
   created_at: new Date(t.createdAt || Date.now()).toISOString(),
 });
 const tableFrom = (r) => ({
@@ -26,7 +27,12 @@ const taskFrom = (r) => ({
   priority: r.priority, note: r.note, reason: r.reason, icon: r.icon, vals: r.vals || {}, links: r.links || [],
   subTableId: r.sub_list_id, pos: r.pos, createdAt: Date.parse(r.created_at),
   ...(r.is_group ? { isGroup: true } : {}), collapsed: r.collapsed, gCollapsed: r.g_collapsed,
+  estimateMin: r.estimate_min ?? null, ai: r.ai || {},
 });
+export const ruleRow = (r, position) => ({
+  id: r.id, list_id: r.listId || null, text: r.text || '', enabled: r.enabled !== false, position,
+});
+const ruleFrom = (r) => ({ id: r.id, listId: r.list_id, text: r.text, enabled: r.enabled });
 
 // The settings that sync to the server (the rest of `ui` stays on this device)
 export const settingsOf = (s) => ({
@@ -46,10 +52,15 @@ async function fetchAllRows(table, order) {
 }
 
 export async function fetchAll() {
-  const [lists, tasks, settings] = await Promise.all([
+  // the database must have the v2 columns/tables (supabase/schema.sql); otherwise saving would fail later
+  const probe = await supabase.from('tasks').select('estimate_min,ai').limit(1);
+  const probe2 = await supabase.from('ai_rules').select('id').limit(1);
+  if (probe.error || probe2.error) throw new Error('SCHEMA_OUTDATED');
+  const [lists, tasks, settings, rules] = await Promise.all([
     fetchAllRows('lists', 'position'),
     fetchAllRows('tasks', 'created_at'),
     supabase.from('user_settings').select('data').maybeSingle(),
+    fetchAllRows('ai_rules', 'position'),
   ]);
   if (settings.error) throw settings.error;
   const tables = Object.fromEntries(lists.map((r) => [r.id, tableFrom(r)]));
@@ -57,6 +68,8 @@ export async function fetchAll() {
     tableOrder: lists.filter((r) => !r.parent_task_id).map((r) => r.id),
     tables,
     tasks: Object.fromEntries(tasks.map((r) => [r.id, taskFrom(r)])),
+    rules: Object.fromEntries(rules.map((r) => [r.id, ruleFrom(r)])),
+    ruleOrder: rules.map((r) => r.id),
     settings: settings.data?.data || null,
   };
 }
@@ -82,7 +95,12 @@ export function diff(prev, next) {
   const pl = listsOf(prev), nl = listsOf(next);
   const pt = Object.fromEntries(Object.values(prev.tasks).map((t) => [t.id, taskRow(t)]));
   const nt = Object.fromEntries(Object.values(next.tasks).map((t) => [t.id, taskRow(t)]));
+  const rulesOf = (s) => Object.fromEntries((s.ruleOrder || []).filter((id) => (s.rules || {})[id])
+    .map((id, i) => [id, ruleRow(s.rules[id], i)]));
+  const pr = rulesOf(prev), nr = rulesOf(next);
   const ops = {
+    upsertRules: Object.values(nr).filter((r) => !pr[r.id] || !same(r, pr[r.id])),
+    deleteRules: Object.keys(pr).filter((id) => !nr[id]),
     upsertLists: Object.values(nl).filter((r) => !pl[r.id] || !same(r, pl[r.id])),
     deleteLists: Object.keys(pl).filter((id) => !nl[id]),
     upsertTasks: Object.values(nt).filter((r) => !pt[r.id] || !same(r, pt[r.id]))
@@ -90,7 +108,7 @@ export function diff(prev, next) {
     deleteTasks: Object.keys(pt).filter((id) => !nt[id]),
     settings: !prev.noSettings && same(settingsOf(prev), settingsOf(next)) ? null : settingsOf(next),
   };
-  ops.empty = !ops.upsertLists.length && !ops.deleteLists.length && !ops.upsertTasks.length
+  ops.empty = !ops.upsertRules.length && !ops.deleteRules.length && !ops.upsertLists.length && !ops.deleteLists.length && !ops.upsertTasks.length
     && !ops.deleteTasks.length && !ops.settings;
   return ops;
 }
@@ -101,6 +119,8 @@ const check = ({ error }) => { if (error) throw error; };
 export async function push(ops, userId) {
   for (const part of chunk(ops.upsertLists, 200)) check(await supabase.from('lists').upsert(part));
   for (const part of chunk(ops.upsertTasks, 200)) check(await supabase.from('tasks').upsert(part));
+  for (const part of chunk(ops.upsertRules, 200)) check(await supabase.from('ai_rules').upsert(part));
+  for (const part of chunk(ops.deleteRules, 100)) check(await supabase.from('ai_rules').delete().in('id', part));
   for (const part of chunk(ops.deleteTasks, 100)) {
     await removeFilesOfTasks(part); // delete image files first; rows disappear with the task (cascade)
     check(await supabase.from('tasks').delete().in('id', part));

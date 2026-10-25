@@ -96,6 +96,13 @@ function TagsModal({ col, task, onClose }) {
   );
 }
 
+// ✨ = this value was set by AI and the user has not changed or approved it yet
+export const AiMark = ({ title = 'הוצע על ידי AI' }) => <span className="ai-mark" title={title}>✨</span>;
+export const hasAi = (t) => {
+  const a = t.ai || {};
+  return !!(a.priority || a.estimate || a.parent || (a.tags || []).length || Object.keys(a.vals || {}).length);
+};
+
 // Editable cell for a custom column
 export function Cell({ col, task }) {
   const [modal, setModal] = useState(false);
@@ -107,13 +114,13 @@ export function Cell({ col, task }) {
     const change = (e) => (e.target.value === '__new' ? setModal(true) : set(e.target.value));
     return (
       <>
-        <label className="pill-select" style={{ background: o ? o.color : 'transparent' }}>
+        <label className={`pill-select ${task.ai?.vals?.[col.id] ? 'ai-set' : ''}`} style={{ background: o ? o.color : 'transparent' }}>
           <select value={v || ''} onChange={change}>
             <option value="">—</option>
             {(col.options || []).map((x) => <option key={x.id} value={x.id}>{optLabel(x)}</option>)}
             <option value="__new">＋ הוספת אפשרות חדשה…</option>
           </select>
-          <span>{o ? optLabel(o) : '＋'}</span>
+          <span>{task.ai?.vals?.[col.id] && <AiMark />}{o ? optLabel(o) : '＋'}</span>
         </label>
         {modal && <QuickOptionModal tableId={task.tableId} col={col} kind="סטטוס" onDone={set} onClose={() => setModal(false)} />}
       </>
@@ -124,7 +131,10 @@ export function Cell({ col, task }) {
     return (
       <>
         <button className="tags-cell" onClick={() => setModal(true)}>
-          {chosen.map((o) => <span key={o.id} className="tag" style={{ background: o.color }}>{optLabel(o)}</span>)}
+          {chosen.map((o) => {
+            const ai = (task.ai?.tags || []).includes(o.id);
+            return <span key={o.id} className={`tag ${ai ? 'ai-set' : ''}`} style={{ background: o.color }}>{ai && <AiMark />}{optLabel(o)}</span>;
+          })}
           <span className="tag add">＋</span>
         </button>
         {modal && <TagsModal col={col} task={task} onClose={() => setModal(false)} />}
@@ -140,13 +150,29 @@ export function Cell({ col, task }) {
 export function PriorityCell({ task }) {
   const p = task.priority;
   return (
-    <label className={`pill-select ${p ? PRIORITY[p].cls : ''}`}>
+    <label className={`pill-select ${p ? PRIORITY[p].cls : ''} ${task.ai?.priority ? 'ai-set' : ''}`}>
       <select value={p || ''} onChange={(e) => actions.updateTask(task.id, { priority: e.target.value ? +e.target.value : null })}>
         <option value="">—</option>
         {[1, 2, 3].map((k) => <option key={k} value={k}>{PRIORITY[k].label}</option>)}
       </select>
-      <span>{p ? PRIORITY[p].label : '＋'}</span>
+      <span>{task.ai?.priority && <AiMark />}{p ? PRIORITY[p].label : '＋'}</span>
     </label>
+  );
+}
+
+// Estimated minutes (a built-in column; empty is fine)
+export const fmtMinutes = (m) => (m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ש׳` : `${m} דק׳`);
+export function EstimateCell({ task }) {
+  const set = (e) => {
+    const n = e.target.value === '' ? null : Math.max(0, Math.min(1440, Math.round(+e.target.value)));
+    actions.updateTask(task.id, { estimateMin: Number.isNaN(n) ? null : n });
+  };
+  return (
+    <div className={`est ${task.ai?.estimate ? 'ai-set' : ''}`}>
+      {task.ai?.estimate && <AiMark />}
+      <input type="number" min="0" max="1440" step="5" inputMode="numeric" placeholder="—" value={task.estimateMin ?? ''} onChange={set} aria-label="זמן משוער בדקות" />
+      <span className="unit">דק׳</span>
+    </div>
   );
 }
 
