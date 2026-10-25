@@ -37,7 +37,7 @@ const ruleFrom = (r) => ({ id: r.id, listId: r.list_id, text: r.text, enabled: r
 // The settings that sync to the server (the rest of `ui` stays on this device)
 export const settingsOf = (s) => ({
   hideSuggest: !!s.ui.hideSuggest, splitDismiss: s.ui.splitDismiss || {},
-  migrations: s.migrations || {}, initialized: true,
+  migrations: s.migrations || {}, plan: s.ui.plan || null, initialized: true,
 });
 
 // ---------- loading ----------

@@ -1,19 +1,23 @@
 import React, { useState } from 'react';
 import { actions, useStore, todayStr, guessIcon, taskIcon } from './store.js';
-import { Check, PriorityBadge, IconPicker } from './components.jsx';
+import { Check, PriorityBadge, IconPicker, fmtMinutes } from './components.jsx';
 
 const greeting = () => {
   const h = new Date().getHours();
   return h < 12 ? 'בוקר טוב' : h < 18 ? 'צהריים טובים' : 'ערב טוב';
 };
 
-export default function TodayView({ openTask, openBrain }) {
+export default function TodayView({ openTask, openBrain, onPlan }) {
   const s = useStore();
   const [title, setTitle] = useState('');
   const [listId, setListId] = useState(null);
   const [icon, setIcon] = useState('');
   const all = Object.values(s.tasks);
-  const focus = all.filter((t) => t.today);
+  // today's plan from the AI (if any): order and a short reason for each task
+  const plan = s.ui.plan && s.ui.plan.date === todayStr() ? s.ui.plan : null;
+  const planIdx = (id) => { const i = plan ? plan.items.findIndex((x) => x.id === id) : -1; return i < 0 ? 1e6 : i; };
+  const whyOf = (id) => plan?.items.find((x) => x.id === id)?.why || '';
+  const focus = all.filter((t) => t.today).sort((a, b) => planIdx(a.id) - planIdx(b.id));
   const doneN = focus.filter((t) => t.done).length;
   const pct = focus.length ? Math.round((doneN / focus.length) * 100) : 0;
 
@@ -46,7 +50,9 @@ export default function TodayView({ openTask, openBrain }) {
             <span>{s.tables[t.tableId]?.emoji} {s.tables[t.tableId]?.name}</span>
             {subs.length > 0 && <span>· {subs.filter((x) => x.done).length}/{subs.length} תת-משימות</span>}
             <PriorityBadge p={t.priority} />
+            {t.estimateMin != null && <span>· ~{fmtMinutes(t.estimateMin)}</span>}
           </div>
+          {whyOf(t.id) && <div className="reason ai-why">✨ {whyOf(t.id)}</div>}
           {t.reason && <div className="reason">💡 {t.reason}</div>}
         </div>
         <button className="icon-btn" title="הסר מהיום" onClick={(e) => { e.stopPropagation(); actions.updateTask(t.id, { today: false }); }}>✕</button>
@@ -71,7 +77,15 @@ export default function TodayView({ openTask, openBrain }) {
         </div>
       )}
 
-      <button className="btn brain" onClick={openBrain}>🧠 בקשי מ-Claude לתעדף בשבילך</button>
+      {plan && (
+        <div className="brain-msg plan-msg">
+          <span>✨ {plan.message || 'התוכנית של היום'}</span>
+          <button className="icon-btn" title="ביטול התוכנית" onClick={actions.clearPlan}>✕</button>
+        </div>
+      )}
+
+      <button className="btn plan" onClick={onPlan}>✨ תכנני לי את היום</button>
+      <button className="btn brain" onClick={openBrain}>🧠 בקשי מ-Claude לתעדף בשבילך (העתק-הדבק)</button>
 
       <h2>המיקוד שלי להיום</h2>
       <div className="stack">

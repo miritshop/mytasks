@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { actions, useStore, guessIcon, descendantIds, autoGroupIcon } from './store.js';
 import { Check, Cell, ColumnModal, PriorityCell, EstimateCell, IconPicker, AiMark, hasAi } from './components.jsx';
 
-export default function TableView({ tableId, openTask, onSplit }) {
+export default function TableView({ tableId, openTask, onSplit, onAi }) {
   const s = useStore();
   const table = s.tables[tableId];
   const [title, setTitle] = useState('');
@@ -77,6 +77,7 @@ export default function TableView({ tableId, openTask, onSplit }) {
   const roots = kidsOf(null);
   return (
     <div className="table-wrap">
+      {onAi && <div className="table-tools"><button className="btn soft small" onClick={onAi}>✨ הצעות AI</button></div>}
       <table className="grid">
         <thead>
           <tr>

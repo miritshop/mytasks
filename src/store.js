@@ -191,7 +191,7 @@ function buildState(data, ui = {}) {
   const tableId = data.tables[ui.tableId] ? ui.tableId : data.tableOrder[0] || null;
   return {
     tableOrder: data.tableOrder, tables: data.tables, tasks: data.tasks, rules: data.rules || {}, ruleOrder: data.ruleOrder || [], migrations: data.settings?.migrations || {},
-    ui: { tableId, view: ui.view || 'today', hideSuggest: !!data.settings?.hideSuggest, splitDismiss: data.settings?.splitDismiss || {} },
+    ui: { tableId, view: ui.view || 'today', hideSuggest: !!data.settings?.hideSuggest, splitDismiss: data.settings?.splitDismiss || {}, plan: data.settings?.plan || null },
   };
 }
 
@@ -296,6 +296,61 @@ export const actions = {
     if (t.ai?.vals) delete t.ai.vals[col];
     if (t.ai?.tags && Array.isArray(v)) t.ai.tags = t.ai.tags.filter((o) => v.includes(o)); // tags removed by hand lose their mark
   }),
+  // Apply reviewed AI suggestions. Everything the AI sets is marked in task.ai (shown as ✨) until approved or edited.
+  // Existing tags/categories are reused; a new one is created only when the user kept a "new" suggestion.
+  applyAiSuggestions: (patches) => commit((d) => {
+    const made = {}; // new categories created in this batch: "<list>|<title>" -> id
+    patches.forEach((p) => {
+      const t = d.tasks[p.id];
+      if (!t) return;
+      t.ai = t.ai || {};
+      if (p.estimateMin != null && p.estimateMin !== t.estimateMin) { t.estimateMin = p.estimateMin; t.ai.estimate = true; }
+      if (p.priority != null && p.priority !== t.priority) { t.priority = p.priority; t.ai.priority = true; }
+
+      const col = d.tables[t.tableId]?.columns.find((c) => c.type === 'tags');
+      if (col && ((p.tagOptionIds || []).length || (p.newTags || []).length)) {
+        col.options = col.options || [];
+        const ids = [...(p.tagOptionIds || []).filter((id) => col.options.some((o) => o.id === id))];
+        (p.newTags || []).forEach((label) => {
+          let o = col.options.find((x) => x.label.toLowerCase() === label.toLowerCase());
+          if (!o) {
+            o = { id: uid(), label, icon: autoOptionIcon(label), color: PALETTE[col.options.length % PALETTE.length] };
+            col.options.push(o);
+          }
+          ids.push(o.id);
+        });
+        const have = Array.isArray(t.vals[col.id]) ? t.vals[col.id] : [];
+        const added = [...new Set(ids)].filter((id) => !have.includes(id));
+        if (added.length) {
+          t.vals[col.id] = [...have, ...added];
+          t.ai.tags = [...new Set([...(t.ai.tags || []), ...added])];
+        }
+      }
+
+      let gid = p.categoryId && d.tasks[p.categoryId]?.isGroup ? p.categoryId : null;
+      if (!gid && p.newCategory) {
+        const key = `${t.tableId}|${p.newCategory.toLowerCase()}`;
+        const existing = Object.values(d.tasks).find((g) => g.isGroup && g.tableId === t.tableId && g.title.toLowerCase() === p.newCategory.toLowerCase());
+        if (made[key]) gid = made[key];
+        else if (existing) gid = existing.id;
+        else {
+          const parentId = d.tasks[t.parentId]?.isGroup ? t.parentId : null;
+          const g = newTask(t.tableId, p.newCategory, { parentId, isGroup: true, icon: '', gCollapsed: false });
+          d.tasks[g.id] = g;
+          made[key] = gid = g.id;
+        }
+      }
+      if (gid && gid !== t.id && gid !== t.parentId) { t.parentId = gid; t.ai.parent = true; }
+    });
+  }),
+  // The AI's plan for today: it becomes the focus list (in order), with a short reason for each task
+  saveDayPlan: (plan, replaceFocus = true) => commit((d) => {
+    const ids = plan.items.map((i) => i.id).filter((id) => d.tasks[id]);
+    if (replaceFocus) Object.values(d.tasks).forEach((t) => { if (t.today && !ids.includes(t.id)) t.today = false; });
+    ids.forEach((id) => { d.tasks[id].today = true; });
+    d.ui.plan = { date: todayStr(), message: plan.message || '', items: plan.items.filter((i) => d.tasks[i.id]).map((i) => ({ id: i.id, why: i.why || '' })) };
+  }),
+  clearPlan: () => commit((d) => { d.ui.plan = null; }),
   // "✓ approve": keep the AI's values but remove the marks
   approveAi: (id) => commit((d) => { if (d.tasks[id]) d.tasks[id].ai = {}; }),
   addRule: (text = '', listId = null) => {

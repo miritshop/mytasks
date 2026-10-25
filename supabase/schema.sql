@@ -157,3 +157,32 @@ alter table public.ai_rules enable row level security;
 drop policy if exists "own rules" on public.ai_rules;
 create policy "own rules" on public.ai_rules for all to authenticated
   using (owner = auth.uid()) with check (owner = auth.uid());
+
+-- ============ v3: daily limit for AI requests ============
+-- One row per user per day. take_ai_quota() adds 1 and refuses once the limit is passed.
+-- Only the Edge Function calls it (with the user's own login); a user can only ever raise their own count.
+
+create table if not exists public.ai_usage (
+  owner uuid not null references auth.users(id) on delete cascade,
+  day   date not null default current_date,
+  count integer not null default 0,
+  primary key (owner, day)
+);
+alter table public.ai_usage enable row level security;
+drop policy if exists "own usage" on public.ai_usage;
+create policy "own usage" on public.ai_usage for select to authenticated using (owner = auth.uid());
+
+create or replace function public.take_ai_quota(max_per_day integer) returns integer
+language plpgsql security definer set search_path = public as $$
+declare c integer;
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  insert into public.ai_usage (owner, day, count) values (auth.uid(), current_date, 1)
+  on conflict (owner, day) do update set count = public.ai_usage.count + 1
+  returning count into c;
+  if c > max_per_day then raise exception 'quota_exceeded'; end if;   -- the raise also undoes this increment
+  return c;
+end $$;
+
+revoke all on function public.take_ai_quota(integer) from public, anon;
+grant execute on function public.take_ai_quota(integer) to authenticated;

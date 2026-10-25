@@ -5,6 +5,8 @@ import TableView from './TableView.jsx';
 import GraphView from './GraphView.jsx';
 import FilterView from './FilterView.jsx';
 import RulesModal from './Rules.jsx';
+import SuggestModal from './SuggestModal.jsx';
+import PlanModal from './PlanModal.jsx';
 import TaskModal from './TaskModal.jsx';
 import BrainModal from './BrainModal.jsx';
 import { SplitBanner, SplitModal, GroupModal } from './CategoryModals.jsx';
@@ -19,6 +21,8 @@ export default function App({ email, userId, imported, onSignOut }) {
   const [brain, setBrain] = useState(false);
   const [menu, setMenu] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const [newTable, setNewTable] = useState(false);
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('📋');
@@ -106,8 +110,8 @@ export default function App({ email, userId, imported, onSignOut }) {
         <div className="content">
           {isList && table && <SplitBanner tableId={tableId} onSplit={(parentId, manual) => setSplit({ tableId, parentId, manual })} />}
           {view === 'filter' && <FilterView openTask={openTask} />}
-          {view === 'today' && <TodayView openTask={openTask} openBrain={() => setBrain(true)} />}
-          {view === 'table' && table && <TableView tableId={tableId} openTask={openTask} onSplit={(parentId) => setSplit({ tableId, parentId })} />}
+          {view === 'today' && <TodayView openTask={openTask} openBrain={() => setBrain(true)} onPlan={() => setPlanOpen(true)} />}
+          {view === 'table' && table && <TableView tableId={tableId} openTask={openTask} onAi={() => setSuggestOpen(true)} onSplit={(parentId) => setSplit({ tableId, parentId })} />}
           {view === 'graph' && table && <GraphView tableId={tableId} openTask={openTask} />}
         </div>
       </main>
@@ -120,6 +124,8 @@ export default function App({ email, userId, imported, onSignOut }) {
       {groupId && <GroupModal id={groupId} onClose={() => setGroupId(null)} onSplit={(parentId) => setSplit({ tableId, parentId })} />}
       {split && <SplitModal tableId={split.tableId} parentId={split.parentId} manual={split.manual} onClose={() => setSplit(null)} />}
       {taskId && <TaskModal taskId={taskId} userId={userId} onClose={() => setTaskId(null)} />}
+      {suggestOpen && table && <SuggestModal tableId={tableId} onClose={() => setSuggestOpen(false)} />}
+      {planOpen && <PlanModal onClose={() => setPlanOpen(false)} />}
       {rulesOpen && <RulesModal onClose={() => setRulesOpen(false)} />}
       {brain && <BrainModal onClose={() => setBrain(false)} />}
       {editList && s.tables[editList] && <ListModal id={editList} onClose={() => setEditList(null)} />}
