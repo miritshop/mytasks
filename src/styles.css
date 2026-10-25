@@ -359,3 +359,16 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 
 .sug-grid { grid-template-columns: 90px 1fr 1fr 1fr !important; }
 @media (max-width: 760px) { .sug-grid { grid-template-columns: 1fr 1fr !important; } .sug-grid label:first-child { grid-column: auto; } }
+
+/* drag and drop in the table */
+.drag-handle { cursor: grab; touch-action: none; user-select: none; color: var(--muted); padding: 2px 4px; font-size: 17px; line-height: 1; flex: none; border-radius: 6px; }
+.drag-handle:hover { background: var(--primary-soft); color: var(--primary); }
+body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none !important; }
+.dragging-row { opacity: 0.35; }
+tr.drop-dest > td { background: rgba(124, 108, 240, 0.2) !important; box-shadow: inset 0 0 0 2px var(--primary); }
+tr.drop-bad > td { background: rgba(229, 86, 109, 0.16) !important; }
+.drag-ghost { position: fixed; z-index: 100; pointer-events: none; background: var(--card); color: var(--ink); border: 2px solid var(--primary); border-radius: 12px; padding: 6px 12px; font-weight: 700; font-size: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drag-ghost.bad { border-color: var(--danger); }
+.root-zone { position: fixed; z-index: 90; bottom: 18px; inset-inline: 0; margin-inline: auto; width: min(420px, 90vw); text-align: center; padding: 14px; border-radius: 16px; background: var(--card); border: 2px dashed var(--primary); color: var(--primary); font-weight: 700; box-shadow: var(--shadow); }
+.root-zone.active { background: var(--primary); color: #fff; border-style: solid; }
+.root-zone.bad { border-color: var(--danger); color: var(--danger); }
