@@ -54,6 +54,7 @@ export function cleanSuggestInput(b) {
       estimateMin: num(t?.current?.estimateMin),
       priority: num(t?.current?.priority),
       tags: (Array.isArray(t?.current?.tags) ? t.current.tags : []).slice(0, 10).map((x) => clip(x, 40)),
+      when: t?.current?.when ? clip(t.current.when, 12) : null,
     },
   })).filter((t) => t.id && t.title && lists.some((l) => l.id === t.listId));
   return { lists, rules: cleanRules(b?.rules), tasks };
@@ -68,6 +69,7 @@ export function cleanPlanInput(b) {
     priority: num(t?.priority),
     estimateMin: num(t?.estimateMin),
     due: t?.due ? clip(t.due, 10) : null,
+    when: t?.when ? clip(t.when, 12) : null,
     inFocusToday: !!t?.today,
     note: clip(t?.note, 200),
   })).filter((t) => t.id && t.title);
@@ -83,7 +85,7 @@ export function cleanPlanInput(b) {
 
 // ---------- prompts ----------
 export const SYSTEM_SUGGEST = `את עוזרת לאמא עם ADHD לארגן את המשימות שלה. עני בעברית.
-לכל משימה הציעי: הערכת זמן בדקות, עדיפות, תגיות, וקטגוריה.
+לכל משימה הציעי: הערכת זמן בדקות, עדיפות, תגיות, קטגוריה, ומתי לבצע.
 כללי עבודה:
 1. תמיד העדיפי תגיות וקטגוריות שכבר קיימות ברשימה (לפי המזהים שניתנו). הציעי חדשה (newTags / newCategory) רק אם אין התאמה סבירה, ובשם קצר של 1 עד 3 מילים בעברית.
 2. הערכת זמן: מספר שלם של דקות, ריאלי ונדיב (אצל מי שיש לה ADHD קשה להתחיל ויש הפרעות). אל תעגלי לערכים גדולים בלי סיבה.
@@ -91,6 +93,7 @@ export const SYSTEM_SUGGEST = `את עוזרת לאמא עם ADHD לארגן א�
 4. הכללים של המשתמשת (rules) מחייבים. כל כלל שהשפיע על ההצעה, רשמי את המזהה שלו ב-ruleIds. כלל עם listId חל רק על משימות באותה רשימה.
 5. אל תשני כותרות משימות. אם משימה כבר מכילה ערך (current), אפשר להשאיר אותו (החזירי אותו כמו שהוא).
 6. reason: משפט קצר מאוד בעברית (עד 12 מילים) שמסביר את ההצעה.
+7. when: מתי לבצע: today (היום), week (השבוע), next (בשבוע הבא), soon (בקרוב) או null אם אין מספיק מידע. התחשבי בדחיפות, בעדיפות ובכללים. current.when הוא המועד הנוכחי (overdue = המועד שהוגדר עבר).
 החזירי את התוצאה רק דרך הכלי submit_suggestions.`;
 
 export const TOOL_SUGGEST = {
@@ -112,9 +115,10 @@ export const TOOL_SUGGEST = {
             categoryId: { type: ['string', 'null'] },
             newCategory: { type: ['string', 'null'] },
             ruleIds: { type: 'array', items: { type: 'string' } },
+            when: { type: ['string', 'null'], enum: ['today', 'week', 'next', 'soon', null] },
             reason: { type: 'string' },
           },
-          required: ['id', 'estimateMin', 'priority', 'tagOptionIds', 'newTags', 'categoryId', 'newCategory', 'ruleIds', 'reason'],
+          required: ['id', 'estimateMin', 'priority', 'tagOptionIds', 'newTags', 'categoryId', 'newCategory', 'ruleIds', 'when', 'reason'],
         },
       },
     },
@@ -127,7 +131,7 @@ export const SYSTEM_PLAN = `את עוזרת לאמא עם ADHD לתכנן את �
 בחרי מה למקד היום ובאיזה סדר:
 1. בחרי בין 3 ל-7 משימות. סך הזמן המשוער לא יעלה על כ-80% מהזמן הפנוי (משימה בלי הערכת זמן: הניחי 20 דקות).
 2. אנרגיה נמוכה: התחילי בניצחון קטן וקל, ובחרי פחות משימות. אנרגיה גבוהה: אפשר להתחיל במשימה הכי חשובה.
-3. תאריכי יעד שהגיעו או עברו ועדיפות 1 קודמים, אלא אם ההקשר או כלל מונעים.
+3. לכל משימה יש when: overdue (המועד שנקבע עבר), today, week (השבוע), next (בשבוע הבא), soon (בקרוב), date, או ריק. משימות באיחור, תאריכי יעד שהגיעו או עברו ועדיפות 1 קודמים. משימות עם when=next או soon נבחרות רק אם נשאר מקום. הכל אלא אם ההקשר או כלל מונעים.
 4. הכללים של המשתמשת (rules) והקשר להיום מחייבים (למשל "לבשל רק כשהתינוק ער" ו"התינוק ער עד 11"). רשמי ב-ruleIds כל כלל שהשפיע.
 5. why: משפט קצר מאוד בעברית (עד 12 מילים) לכל משימה. message: משפט עידוד חם וקצר.
 החזירי את התוצאה רק דרך הכלי submit_plan, לפי סדר הביצוע.`;
@@ -198,6 +202,7 @@ export function validateSuggest(raw, input) {
       id: task.id,
       estimateMin: est === null ? null : clamp(Math.round(est), 1, 480),
       priority: [1, 2, 3].includes(pr) ? pr : null,
+      when: ['today', 'week', 'next', 'soon'].includes(it.when) ? it.when : null,
       tagOptionIds: optionIds.slice(0, 4),
       newTags: newTags.slice(0, 2),
       categoryId,

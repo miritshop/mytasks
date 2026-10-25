@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { actions, PALETTE, addStatusOptions, autoOptionIcon } from './store.js';
 import { EMOJI_SETS, firstEmoji } from './emojis.js';
+import { WHEN_KINDS, whenInfo } from './when.js';
 
 export const PRIORITY = {
   1: { label: 'דחוף', cls: 'p1' },
@@ -100,7 +101,7 @@ function TagsModal({ col, task, onClose }) {
 export const AiMark = ({ title = 'הוצע על ידי AI' }) => <span className="ai-mark" title={title}>✨</span>;
 export const hasAi = (t) => {
   const a = t.ai || {};
-  return !!(a.priority || a.estimate || a.parent || (a.tags || []).length || Object.keys(a.vals || {}).length);
+  return !!(a.priority || a.estimate || a.parent || a.when || (a.tags || []).length || Object.keys(a.vals || {}).length);
 };
 
 // Editable cell for a custom column
@@ -310,6 +311,56 @@ export function IconPicker({ value, auto, onChange, autoLabel = '✨ אוטומ�
               autoOn={!value}
               onAuto={() => { onChange(''); close(); }}
             />
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+// ---------- "when": today / this week / next week / soon / a date ----------
+export function WhenChips({ task, onDone }) {
+  const info = whenInfo(task);
+  const activeKey = !task.whenKind ? null : task.whenKind === 'date' && info.eff === 'date' ? 'date' : info.eff;
+  const pick = (kind) => { actions.setWhen(task.id, task.whenKind && info.eff === kind && task.whenKind !== 'date' ? null : kind); onDone?.(); };
+  const chip = (on) => `chip ${on ? 'on' : ''}`;
+  return (
+    <div className="when-chips">
+      {WHEN_KINDS.map(([k, label, emoji]) => (
+        <button key={k} className={chip(activeKey === k)} onClick={() => pick(k)}>{emoji} {label}</button>
+      ))}
+      <label className={`${chip(task.whenKind === 'date')} date-chip`}>
+        🗓️ <input type="date" value={task.whenKind === 'date' ? task.whenDate || '' : ''}
+          onChange={(e) => { actions.setWhen(task.id, e.target.value ? 'date' : null, e.target.value); onDone?.(); }} />
+      </label>
+      {task.whenKind && <button className="chip" onClick={() => { actions.setWhen(task.id, null); onDone?.(); }}>✕ בלי מועד</button>}
+    </div>
+  );
+}
+
+export function WhenBadge({ task }) {
+  const i = whenInfo(task);
+  if (!i.kind) return null;
+  return <span className={`when-pill small ${i.overdue ? 'overdue' : `w-${i.eff}`}`}>{i.overdue ? '⚠️ באיחור: ' : `${i.emoji} `}{i.label}</span>;
+}
+
+// table cell: a pill that opens the quick buttons
+export function WhenCell({ task }) {
+  const [open, setOpen] = useState(false);
+  const i = whenInfo(task);
+  return (
+    <span className="icon-pick">
+      <button className={`when-pill ${i.overdue ? 'overdue' : i.eff ? `w-${i.eff}` : ''} ${task.ai?.when ? 'ai-set' : ''}`}
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>
+        {task.ai?.when && <AiMark />}
+        {i.kind ? `${i.overdue ? '⚠️ ' : `${i.emoji} `}${i.label}` : '＋'}
+      </button>
+      {open && (
+        <>
+          <div className="pick-scrim" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div className="pick-pop when-pop" onClick={(e) => e.stopPropagation()}>
+            {i.overdue && <p className="err when-late">המועד עבר. בחרי מועד חדש:</p>}
+            <WhenChips task={task} onDone={() => setOpen(false)} />
           </div>
         </>
       )}

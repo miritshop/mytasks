@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { actions, useStore, todayStr, guessIcon, taskIcon } from './store.js';
-import { Check, PriorityBadge, IconPicker, fmtMinutes } from './components.jsx';
+import { Check, PriorityBadge, IconPicker, fmtMinutes, WhenBadge } from './components.jsx';
+import { whenInfo } from './when.js';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -17,17 +18,18 @@ export default function TodayView({ openTask, openBrain, onPlan }) {
   const plan = s.ui.plan && s.ui.plan.date === todayStr() ? s.ui.plan : null;
   const planIdx = (id) => { const i = plan ? plan.items.findIndex((x) => x.id === id) : -1; return i < 0 ? 1e6 : i; };
   const whyOf = (id) => plan?.items.find((x) => x.id === id)?.why || '';
-  const focus = all.filter((t) => t.today).sort((a, b) => planIdx(a.id) - planIdx(b.id));
+  const overdue = all.filter((t) => !t.isGroup && whenInfo(t).overdue).sort((a, b) => (a.priority || 9) - (b.priority || 9));
+  const focus = all.filter((t) => t.today && !whenInfo(t).overdue).sort((a, b) => planIdx(a.id) - planIdx(b.id));
   const doneN = focus.filter((t) => t.done).length;
   const pct = focus.length ? Math.round((doneN / focus.length) * 100) : 0;
 
-  const dueSoon = (t) => Object.entries(t.vals).some(([cid, v]) => {
+  const dueSoon = (t) => ['today'].includes(whenInfo(t).eff) || Object.entries(t.vals).some(([cid, v]) => {
     const col = s.tables[t.tableId]?.columns.find((c) => c.id === cid);
     return col?.type === 'date' && v && v <= todayStr();
   });
   const suggestions = all
-    .filter((t) => !t.isGroup && !t.today && !t.done && (!t.parentId || s.tasks[t.parentId]?.isGroup))
-    .sort((a, b) => (dueSoon(b) - dueSoon(a)) || ((a.priority || 9) - (b.priority || 9)))
+    .filter((t) => !t.isGroup && !t.today && !t.done && !whenInfo(t).overdue && (!t.parentId || s.tasks[t.parentId]?.isGroup))
+    .sort((a, b) => (dueSoon(b) - dueSoon(a)) || (whenInfo(a).rank - whenInfo(b).rank) || ((a.priority || 9) - (b.priority || 9)))
     .slice(0, 6);
 
   const add = () => {
@@ -87,6 +89,28 @@ export default function TodayView({ openTask, openBrain, onPlan }) {
       <button className="btn plan" onClick={onPlan}>✨ תכנני לי את היום</button>
       <button className="btn brain" onClick={openBrain}>🧠 בקשי מ-Claude לתעדף בשבילך (העתק-הדבק)</button>
 
+      {overdue.length > 0 && (
+        <>
+          <h2>⚠️ באיחור: מה עושים?</h2>
+          <div className="stack">
+            {overdue.map((t) => (
+              <div className="overdue-card" key={t.id}>
+                <div className="row">
+                  <span className="grow res-title" onClick={() => openTask(t.id)}>{taskIcon(t)} {t.title} <WhenBadge task={t} /></span>
+                </div>
+                <div className="row wrap">
+                  <button className="btn soft small" onClick={() => actions.setWhen(t.id, 'today')}>☀️ להיום</button>
+                  <button className="btn soft small" onClick={() => actions.setWhen(t.id, 'week')}>📅 להשבוע</button>
+                  <button className="btn soft small" onClick={() => actions.setWhen(t.id, 'soon')}>🔜 לבקרוב</button>
+                  <button className="btn soft small" onClick={() => actions.setWhen(t.id, null)}>בלי מועד</button>
+                  <button className="btn primary small" onClick={() => actions.toggleDone(t.id)}>✓ בוצע</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <h2>המיקוד שלי להיום</h2>
       <div className="stack">
         {focus.map((t) => <Card key={t.id} t={t} />)}
@@ -112,7 +136,7 @@ export default function TodayView({ openTask, openBrain, onPlan }) {
           <div className="stack">
             {suggestions.map((t) => (
               <div className="suggest" key={t.id}>
-                <span className="grow">{taskIcon(t)} {t.title} <PriorityBadge p={t.priority} />{dueSoon(t) && <span className="pbadge p1">להיום</span>}</span>
+                <span className="grow">{taskIcon(t)} {t.title} <PriorityBadge p={t.priority} /><WhenBadge task={t} />{dueSoon(t) && <span className="pbadge p1">להיום</span>}</span>
                 <button className="btn soft small" onClick={() => actions.updateTask(t.id, { today: true })}>⭐ להיום</button>
               </div>
             ))}

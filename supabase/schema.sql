@@ -186,3 +186,9 @@ end $$;
 
 revoke all on function public.take_ai_quota(integer) from public, anon;
 grant execute on function public.take_ai_quota(integer) to authenticated;
+
+-- ============ v4: "when" (today / this week / next week / soon / a date) ============
+alter table public.tasks add column if not exists when_kind text
+  check (when_kind is null or when_kind in ('today', 'week', 'next', 'soon', 'date'));
+alter table public.tasks add column if not exists when_date date;
+  -- for 'date': the due date. For 'today'/'week'/'next': the day it was chosen (so we know when it has run out).

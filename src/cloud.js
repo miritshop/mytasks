@@ -17,6 +17,7 @@ export const taskRow = (t) => ({
   vals: t.vals || {}, links: t.links || [], sub_list_id: t.subTableId || null, pos: t.pos || null,
   collapsed: !!t.collapsed, g_collapsed: !!t.gCollapsed,
   estimate_min: t.estimateMin ?? null, ai: t.ai || {},
+  when_kind: t.whenKind || null, when_date: t.whenDate || null,
   created_at: new Date(t.createdAt || Date.now()).toISOString(),
 });
 const tableFrom = (r) => ({
@@ -27,7 +28,7 @@ const taskFrom = (r) => ({
   priority: r.priority, note: r.note, reason: r.reason, icon: r.icon, vals: r.vals || {}, links: r.links || [],
   subTableId: r.sub_list_id, pos: r.pos, createdAt: Date.parse(r.created_at),
   ...(r.is_group ? { isGroup: true } : {}), collapsed: r.collapsed, gCollapsed: r.g_collapsed,
-  estimateMin: r.estimate_min ?? null, ai: r.ai || {},
+  estimateMin: r.estimate_min ?? null, ai: r.ai || {}, whenKind: r.when_kind || null, whenDate: r.when_date || null,
 });
 export const ruleRow = (r, position) => ({
   id: r.id, list_id: r.listId || null, text: r.text || '', enabled: r.enabled !== false, position,
@@ -53,7 +54,7 @@ async function fetchAllRows(table, order) {
 
 export async function fetchAll() {
   // the database must have the v2 columns/tables (supabase/schema.sql); otherwise saving would fail later
-  const probe = await supabase.from('tasks').select('estimate_min,ai').limit(1);
+  const probe = await supabase.from('tasks').select('estimate_min,ai,when_kind,when_date').limit(1);
   const probe2 = await supabase.from('ai_rules').select('id').limit(1);
   if (probe.error || probe2.error) throw new Error('SCHEMA_OUTDATED');
   const [lists, tasks, settings, rules] = await Promise.all([

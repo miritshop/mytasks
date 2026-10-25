@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { actions, useStore, taskIcon } from './store.js';
-import { Check, PriorityBadge, PRIORITY } from './components.jsx';
+import { Check, PriorityBadge, PRIORITY, WhenBadge } from './components.jsx';
+import { matchesWhen } from './when.js';
 
 // Filter every task across all lists/categories by priority, status (select columns), tags and text.
 // Select columns and tag columns belong to a single list, so they are matched by column name + option label.
@@ -43,18 +44,20 @@ export default function FilterView({ openTask }) {
   const s = useStore();
   const [scope, setScope] = useState('all');
   const [prio, setPrio] = useState([]); // 1 | 2 | 3 | 0 (= none)
+  const [whenSel, setWhenSel] = useState([]); // today | week | next | soon | overdue | none
   const [pick, setPick] = useState({}); // groupKey -> [labels]
   const [q, setQ] = useState('');
   const [showDone, setShowDone] = useState(false);
 
   const groups = buildGroups(s, scope);
   const toggle = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-  const active = prio.length + Object.values(pick).reduce((n, a) => n + a.length, 0) + (q.trim() ? 1 : 0);
-  const clear = () => { setPrio([]); setPick({}); setQ(''); };
+  const active = prio.length + whenSel.length + Object.values(pick).reduce((n, a) => n + a.length, 0) + (q.trim() ? 1 : 0);
+  const clear = () => { setPrio([]); setWhenSel([]); setPick({}); setQ(''); };
 
   const results = Object.values(s.tasks)
     .filter((t) => !t.isGroup && (scope === 'all' || t.tableId === scope) && (showDone || !t.done))
     .filter((t) => !prio.length || prio.includes(t.priority || 0))
+    .filter((t) => !whenSel.length || whenSel.some((k) => matchesWhen(t, k)))
     .filter((t) => groups.every((g) => {
       const want = pick[g.key] || [];
       return !want.length || taskLabels(s, t, g).some((o) => want.includes(o.label));
@@ -75,6 +78,14 @@ export default function FilterView({ openTask }) {
             <option value="all">כל הרשימות</option>
             {s.tableOrder.map((id) => <option key={id} value={id}>{s.tables[id].emoji} {s.tables[id].name}</option>)}
           </select>
+        </div>
+
+        <div className="fgroup">
+          <b>מתי</b>
+          <div className="chips">
+            {[['today', '☀️ היום'], ['week', '📅 השבוע'], ['next', '⏭️ בשבוע הבא'], ['soon', '🔜 בקרוב'], ['overdue', '⚠️ באיחור'], ['none', 'בלי מועד']]
+              .map(([k, l]) => chip(whenSel.includes(k), l, () => setWhenSel(toggle(whenSel, k))))}
+          </div>
         </div>
 
         <div className="fgroup">
@@ -114,6 +125,7 @@ export default function FilterView({ openTask }) {
               <div className="meta">
                 <span>{pathOf(s, t)}</span>
                 <PriorityBadge p={t.priority} />
+                <WhenBadge task={t} />
                 {buildGroups(s, t.tableId).flatMap((g) => taskLabels(s, t, g).map((o) => (
                   <span key={g.key + o.id} className="tag" style={{ background: o.color }}>{optText(o)}</span>
                 )))}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { actions, useStore, guessIcon, groupOptions } from './store.js';
-import { Modal, Cell, Check, PRIORITY, IconPicker, EstimateCell, AiMark, hasAi } from './components.jsx';
+import { Modal, Cell, Check, PRIORITY, IconPicker, EstimateCell, AiMark, hasAi, WhenChips } from './components.jsx';
 import Attachments from './Attachments.jsx';
 
 export default function TaskModal({ taskId, userId, onClose }) {
@@ -31,13 +31,16 @@ export default function TaskModal({ taskId, userId, onClose }) {
         <input className="title-input" value={task.title} onChange={(e) => actions.updateTask(task.id, { title: e.target.value })} />
       </div>
 
+      <div className="field">מתי
+        <WhenChips task={task} />
+      </div>
+
       <div className="field">עדיפות
         <div className="chips">
           {[1, 2, 3].map((p) => (
             <button key={p} className={`chip ${PRIORITY[p].cls} ${task.priority === p ? 'on' : ''}`}
               onClick={() => actions.updateTask(task.id, { priority: task.priority === p ? null : p })}>{PRIORITY[p].label}</button>
           ))}
-          <button className={`chip ${task.today ? 'on' : ''}`} onClick={() => actions.updateTask(task.id, { today: !task.today })}>⭐ מיקוד להיום</button>
         </div>
         {task.reason && <p className="reason">💡 {task.reason}</p>}
       </div>

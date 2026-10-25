@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { actions, useStore, guessIcon, descendantIds, autoGroupIcon } from './store.js';
-import { Check, Cell, ColumnModal, PriorityCell, EstimateCell, IconPicker, AiMark, hasAi } from './components.jsx';
+import { Check, Cell, ColumnModal, PriorityCell, EstimateCell, WhenCell, IconPicker, AiMark, hasAi } from './components.jsx';
 
 export default function TableView({ tableId, openTask, onSplit, onAi }) {
   const s = useStore();
@@ -32,7 +32,7 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
       return (
         <React.Fragment key={t.id}>
           <tr className="group-row">
-            <td colSpan={table.columns.length + 4} style={pad}>
+            <td colSpan={table.columns.length + 5} style={pad}>
               <div className="row">
                 <button className="mini" title={t.collapsed ? 'פתח' : 'סגור'} onClick={() => actions.updateTask(t.id, { collapsed: !t.collapsed })}>{t.collapsed ? '◂' : '▾'}</button>
                 <span className="folder" title="קטגוריה">📁</span>
@@ -64,6 +64,7 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
               <button className="mini" title="פרטים" onClick={() => openTask(t.id)}>⋯</button>
             </div>
           </td>
+          <td><WhenCell task={t} /></td>
           <td><PriorityCell task={t} /></td>
           <td><EstimateCell task={t} /></td>
           {table.columns.map((c) => <td key={c.id}><Cell col={c} task={t} /></td>)}
@@ -82,6 +83,7 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
         <thead>
           <tr>
             <th className="title-cell">משימה</th>
+            <th>מתי</th>
             <th>עדיפות</th>
             <th>זמן</th>
             {table.columns.map((c) => (
@@ -93,7 +95,7 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
         <tbody>
           {roots.map((t) => renderNode(t, 0))}
           <tr>
-            <td colSpan={table.columns.length + 4}>
+            <td colSpan={table.columns.length + 5}>
               <div className="row add-row">
                 <span className="plus">＋</span>
                 <input value={title} placeholder="משימה חדשה… (Enter להוספה)" onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />

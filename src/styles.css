@@ -339,3 +339,23 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 .plan-total { font-weight: 700; color: var(--muted); margin: 12px 4px 6px; }
 .plan-total.over { color: var(--danger); }
 @media (max-width: 760px) { .sug-grid { grid-template-columns: 1fr 1fr; } .sug-grid label:first-child { grid-column: 1 / -1; } }
+
+/* "when" */
+.when-pill { display: inline-flex; align-items: center; gap: 3px; padding: 5px 12px; border-radius: 99px; font-weight: 700; font-size: 13px; white-space: nowrap; background: var(--primary-soft); color: var(--muted); }
+.when-pill.small { padding: 2px 9px; font-size: 12px; }
+.when-pill.w-today { background: #fff0c9; color: #8a5a00; }
+.when-pill.w-week { background: #dff4ea; color: #2f8f6a; }
+.when-pill.w-next { background: #dce6ff; color: #3b5bb5; }
+.when-pill.w-soon { background: #e7ddff; color: #6a4fc4; }
+.when-pill.w-date { background: var(--primary-soft); color: var(--primary); }
+.when-pill.overdue { background: #ffe0e0; color: #d6404f; }
+.when-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.date-chip { display: inline-flex; align-items: center; gap: 4px; }
+.date-chip input { border: 0; background: transparent; font-size: 13px; color: inherit; width: 118px; }
+.when-pop { width: 270px; }
+.when-late { margin: 0 0 6px; font-size: 13px; }
+.overdue-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; border-inline-start: 6px solid var(--danger); }
+.overdue-card .res-title { cursor: pointer; }
+
+.sug-grid { grid-template-columns: 90px 1fr 1fr 1fr !important; }
+@media (max-width: 760px) { .sug-grid { grid-template-columns: 1fr 1fr !important; } .sug-grid label:first-child { grid-column: auto; } }

@@ -2,9 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { actions, useStore, getState, groupIcon, autoOptionIcon } from './store.js';
 import { Modal, Check, PRIORITY } from './components.jsx';
 import { suggest, buildSuggestPayload, tagColumnOf } from './ai.js';
+import { WHEN_KINDS } from './when.js';
 
 const MAX = 25;
-const missing = (t, col) => t.estimateMin == null || !t.priority || (col && !(Array.isArray(t.vals[col.id]) && t.vals[col.id].length));
+const missing = (t, col) => t.estimateMin == null || !t.priority || !t.whenKind || (col && !(Array.isArray(t.vals[col.id]) && t.vals[col.id].length));
 
 // Pick tasks -> ask the AI -> review and fix every suggestion -> apply (marked with ✨)
 export default function SuggestModal({ tableId, onClose }) {
@@ -38,6 +39,7 @@ export default function SuggestModal({ tableId, onClose }) {
           include: true,
           estimateMin: it.estimateMin ?? '',
           priority: it.priority ?? '',
+          when: it.when || '',
           tagIds: it.tagOptionIds,
           newTags: it.newTags.map((label) => ({ label, on: true })),
           category: it.categoryId || (it.newCategory ? `new:${it.newCategory}` : ''),
@@ -62,6 +64,7 @@ export default function SuggestModal({ tableId, onClose }) {
         id,
         estimateMin: r.estimateMin === '' ? null : +r.estimateMin,
         priority: r.priority === '' ? null : +r.priority,
+        when: r.when || null,
         tagOptionIds: r.tagIds,
         newTags: r.newTags.filter((x) => x.on).map((x) => x.label),
         categoryId: newCat || !r.category ? null : r.category,
@@ -130,6 +133,12 @@ export default function SuggestModal({ tableId, onClose }) {
             <div className="sug-grid">
               <label>זמן (דק׳)
                 <input type="number" min="1" max="480" step="5" value={r.estimateMin} onChange={(e) => setRow(id, { estimateMin: e.target.value })} />
+              </label>
+              <label>מתי
+                <select value={r.when} onChange={(e) => setRow(id, { when: e.target.value })}>
+                  <option value="">ללא שינוי</option>
+                  {WHEN_KINDS.map(([k, l, e]) => <option key={k} value={k}>{e} {l}</option>)}
+                </select>
               </label>
               <label>עדיפות
                 <select value={r.priority} onChange={(e) => setRow(id, { priority: e.target.value })}>

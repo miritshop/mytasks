@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import * as cloud from './cloud.js';
+import { whenFields, whenInfo, todayStr } from './when.js';
 
 // RFC 4122 v4 UUID (the database uses uuid keys). Works on plain http too, unlike crypto.randomUUID.
 export const uid = () => {
@@ -9,10 +10,7 @@ export const uid = () => {
   const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 };
-export const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+export { todayStr };
 
 export const PALETTE = ['#FFD9C9', '#D9F2E6', '#DCE6FF', '#FFE6F0', '#FFF1BF', '#E7DDFF', '#D7F1F7'];
 export const TABLE_COLORS = ['#7C6CF0', '#FF8E72', '#4FC79B', '#5B9DF5', '#F06FA0', '#F2B632'];
@@ -21,7 +19,7 @@ const opt = (label, i) => ({ id: uid(), label, color: PALETTE[i % PALETTE.length
 
 const newTask = (tableId, title, extra = {}) => ({
   id: uid(), tableId, parentId: null, title, done: false, today: false, priority: null, note: '',
-  reason: '', vals: {}, links: [], subTableId: null, pos: null, estimateMin: null, ai: {}, createdAt: Date.now(), ...extra,
+  reason: '', vals: {}, links: [], subTableId: null, pos: null, estimateMin: null, ai: {}, whenKind: null, whenDate: null, createdAt: Date.now(), ...extra,
 });
 
 function seed() {
@@ -88,6 +86,10 @@ export const addStatusOptions = (options) => {
 function migrate(s) {
   s.rules = s.rules || {};
   s.ruleOrder = s.ruleOrder || [];
+  if (!s.migrations?.whenField) {
+    Object.values(s.tasks).forEach((t) => { if (t.today && !t.whenKind) Object.assign(t, whenFields('today')); });
+    s.migrations = { ...s.migrations, whenField: true };
+  }
   if (!s.migrations?.statusOptions) {
     Object.values(s.tables).forEach((t) => t.columns.forEach((c) => {
       if (c.type === 'select' && c.name === 'סטטוס') { c.options = c.options || []; addStatusOptions(c.options); }
@@ -273,6 +275,7 @@ const clearAiMarks = (t, p) => {
   if (!t.ai) return;
   if ('priority' in p) delete t.ai.priority;
   if ('estimateMin' in p) delete t.ai.estimate;
+  if ('whenKind' in p || 'today' in p) delete t.ai.when;
 };
 
 // ---------- actions ----------
@@ -286,8 +289,20 @@ export const actions = {
   updateTask: (id, p) => commit((d) => {
     const t = d.tasks[id];
     if (!t) return;
-    Object.assign(t, p);
+    const { today, ...rest } = p;
+    Object.assign(t, rest);
+    if ('today' in p) {
+      if (today) Object.assign(t, whenFields('today'));
+      else if (t.whenKind === 'today') Object.assign(t, whenFields(null));
+    }
     clearAiMarks(t, p);
+  }),
+  // The "when" of a task: today / week / next / soon / date (date as 'YYYY-MM-DD'); kind null clears it
+  setWhen: (id, kind, date) => commit((d) => {
+    const t = d.tasks[id];
+    if (!t) return;
+    Object.assign(t, whenFields(kind, date));
+    if (t.ai) delete t.ai.when;
   }),
   setVal: (id, col, v) => commit((d) => {
     const t = d.tasks[id];
@@ -306,6 +321,7 @@ export const actions = {
       t.ai = t.ai || {};
       if (p.estimateMin != null && p.estimateMin !== t.estimateMin) { t.estimateMin = p.estimateMin; t.ai.estimate = true; }
       if (p.priority != null && p.priority !== t.priority) { t.priority = p.priority; t.ai.priority = true; }
+      if (['today', 'week', 'next', 'soon'].includes(p.when) && p.when !== t.whenKind) { Object.assign(t, whenFields(p.when)); t.ai.when = true; }
 
       const col = d.tables[t.tableId]?.columns.find((c) => c.type === 'tags');
       if (col && ((p.tagOptionIds || []).length || (p.newTags || []).length)) {
@@ -346,8 +362,9 @@ export const actions = {
   // The AI's plan for today: it becomes the focus list (in order), with a short reason for each task
   saveDayPlan: (plan, replaceFocus = true) => commit((d) => {
     const ids = plan.items.map((i) => i.id).filter((id) => d.tasks[id]);
-    if (replaceFocus) Object.values(d.tasks).forEach((t) => { if (t.today && !ids.includes(t.id)) t.today = false; });
-    ids.forEach((id) => { d.tasks[id].today = true; });
+    // tasks that were in today's focus but did not make the plan move to "this week"
+    if (replaceFocus) Object.values(d.tasks).forEach((t) => { if (t.today && !ids.includes(t.id)) Object.assign(t, whenFields('week')); });
+    ids.forEach((id) => { Object.assign(d.tasks[id], whenFields('today')); });
     d.ui.plan = { date: todayStr(), message: plan.message || '', items: plan.items.filter((i) => d.tasks[i.id]).map((i) => ({ id: i.id, why: i.why || '' })) };
   }),
   clearPlan: () => commit((d) => { d.ui.plan = null; }),
@@ -430,10 +447,10 @@ export const actions = {
   importJSON: (txt) => {
     const s = JSON.parse(txt);
     if (!s.tables || !s.tasks) throw new Error('bad file');
-    const fresh = remapIds(s);
+    const fresh = migrate(remapIds(s)); // old backups get the same data upgrades as a normal load
     commit((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, fresh); });
   },
-  reset: () => commit((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, seed()); }),
+  reset: () => commit((d) => { Object.keys(d).forEach((k) => delete d[k]); Object.assign(d, migrate(seed())); }),
   dismissBrain: () => commit((d) => { delete d.brainMessage; }),
 };
 

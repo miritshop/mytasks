@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { todayStr } from './store.js';
+import { whenInfo } from './when.js';
 
 // Talking to the "ai" Edge Function (see supabase/functions/ai). The Anthropic key lives only there.
 
@@ -55,15 +56,18 @@ export function buildSuggestPayload(state, taskIds) {
     rules: activeRules(state),
     tasks: tasks.map((t) => ({
       id: t.id, listId: t.tableId, title: t.title, note: t.note || '', category: groupTitleOf(state, t),
-      current: { estimateMin: t.estimateMin ?? null, priority: t.priority ?? null, tags: tagLabels(state, t) },
+      current: { estimateMin: t.estimateMin ?? null, priority: t.priority ?? null, tags: tagLabels(state, t), when: whenKey(t) },
     })),
   };
 }
 
+// 'overdue' | 'today' | 'week' | 'next' | 'soon' | 'date' | null
+const whenKey = (t) => { const i = whenInfo(t); return i.overdue ? 'overdue' : i.eff; };
+
 // earliest date found in a task's date columns (a rough "due date")
 const dueOf = (state, t) => {
   const cols = state.tables[t.tableId]?.columns.filter((c) => c.type === 'date') || [];
-  const dates = cols.map((c) => t.vals[c.id]).filter(Boolean).sort();
+  const dates = cols.map((c) => t.vals[c.id]).filter(Boolean).concat(t.whenKind === 'date' && t.whenDate ? [t.whenDate] : []).sort();
   return dates[0] || null;
 };
 
@@ -76,7 +80,7 @@ export function buildPlanPayload(state, { hours, energy, context }) {
     rules: activeRules(state),
     tasks: open.slice(0, 80).map((t) => ({
       id: t.id, title: t.title, list: state.tables[t.tableId]?.name || '', category: groupTitleOf(state, t),
-      priority: t.priority ?? null, estimateMin: t.estimateMin ?? null, due: dueOf(state, t), today: !!t.today, note: t.note || '',
+      priority: t.priority ?? null, estimateMin: t.estimateMin ?? null, due: dueOf(state, t), when: whenKey(t), today: !!t.today, note: t.note || '',
     })),
   };
 }
