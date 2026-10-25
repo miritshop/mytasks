@@ -61,6 +61,15 @@ export async function fetchAll() {
   };
 }
 
+// First-run lock: only ONE browser/tab may fill a brand-new account (import old data or demo data).
+// The settings row is the lock: inserting it succeeds once; any concurrent tab gets a duplicate-key error.
+export async function claimInit(userId) {
+  const { error } = await supabase.from('user_settings').insert({ owner: userId, data: { initialized: true } });
+  if (!error) return true;
+  if (error.code === '23505') return false;
+  throw error;
+}
+
 // ---------- pushing changes ----------
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 

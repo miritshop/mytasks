@@ -192,10 +192,13 @@ function buildState(data, ui = {}) {
 // Load the signed-in user's data. A brand-new account gets the old browser data (if any) or the demo data.
 export async function startSession(id) {
   userId = id;
-  const data = await cloud.fetchAll();
+  let data = await cloud.fetchAll();
   let next;
   let imported = false;
-  if (!data.settings && !data.tableOrder.length) {
+  let fresh = !data.settings && !data.tableOrder.length;
+  // Two tabs opening a new account at once must not both fill it (that duplicated everything)
+  if (fresh && !(await cloud.claimInit(id))) { data = await cloud.fetchAll(); fresh = false; }
+  if (fresh) {
     const legacy = readLegacy();
     imported = !!legacy;
     next = legacy ? remapIds(legacy) : seed();
