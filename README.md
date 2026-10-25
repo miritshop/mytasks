@@ -6,10 +6,7 @@
 - **הקוד:** https://github.com/miritshop/mytasks
 - **טכנולוגיה:** React + Vite, Supabase (התחברות, PostgreSQL, אחסון תמונות), אירוח ב-Netlify.
 
-## מה יש בו
-
-מסך "היום" (מיקוד), טבלה עם עמודות גמישות (טקסט, בחירה, תאריך, מספר, תיבת סימון, תגיות, עדיפות), גרף של משימות מקושרות, תת-טבלאות, קטגוריות עם קינון אינסופי והצעת פיצול, סינון על פני כל הרשימות, אייקונים אוטומטיים, תמונות במשימות, וחשבונות עם סנכרון בין מכשירים.
-פירוט מלא: [SPEC.md](SPEC.md).
+מה האפליקציה עושה ואילו החלטות נקבעו: [SPEC.md](SPEC.md). כללי עבודה ומלכודות: [CLAUDE.md](CLAUDE.md).
 
 ## הרצה מקומית
 
@@ -72,10 +69,7 @@ npx supabase functions deploy ai --project-ref <PROJECT_REF> --use-api
 
 ## עבודה שוטפת
 
-```
-שינוי בקוד ← npm run build ← בדיקה בדפדפן ← git commit ← git push origin main
-```
-כל push ל-`main` מפרסם אוטומטית גרסה חדשה ב-Netlify. שינוי במבנה בסיס הנתונים דורש גם להריץ ב-SQL Editor את השינוי ב-`schema.sql`.
+הזרימה (ענף נפרד, בדיקה מול סביבת הבדיקה, אישור, ורק אז מיזוג ל-`main` שמתפרסם אוטומטית) מתוארת למעלה ב"סביבות" ופרטיה ב-[CLAUDE.md](CLAUDE.md). שינוי במבנה בסיס הנתונים דורש להריץ את `supabase/schema.sql` בפרויקט המתאים.
 
 ## אבטחה: רשימת בדיקה
 
@@ -98,9 +92,8 @@ npx supabase functions deploy ai --project-ref <PROJECT_REF> --use-api
 
 ## מסמכים
 
-| קובץ | תפקיד |
+| קובץ | מה יש בו |
 |---|---|
-| [SPEC.md](SPEC.md) | האיפיון המלא, ההחלטות והכללים. מעלים אותו ל-Claude כדי לבנות מחדש |
-| [CLAUDE.md](CLAUDE.md) | הנחיות עבודה ומלכודות ל-Claude Code בתיקייה הזו |
-| `.claude/skills/mypa/SKILL.md` | skill שמרכז את אופן העבודה על הפרויקט |
+| [SPEC.md](SPEC.md) | האיפיון המלא וההחלטות. מעלים אותו ל-Claude כדי לבנות מחדש |
+| [CLAUDE.md](CLAUDE.md) | כללי עבודה, מפת קבצים ומלכודות ל-Claude Code בתיקייה הזו |
 | [supabase/schema.sql](supabase/schema.sql) | הסכמה והאבטחה של בסיס הנתונים |
