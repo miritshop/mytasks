@@ -41,6 +41,19 @@ VITE_SUPABASE_ANON_KEY=<anon key>
 3. לפני Deploy, להוסיף משתני סביבה: `VITE_SUPABASE_URL` ו-`VITE_SUPABASE_ANON_KEY` (אותם ערכים כמו ב-`.env`).
 4. אחרי שנוצרה כתובת: ב-Supabase ← **Authentication** ← **URL Configuration**: ב-Site URL להזין את כתובת האתר, וב-Redirect URLs להוסיף `<הכתובת>/**` (ואפשר גם `http://localhost:5173/**` לפיתוח).
 
+## סביבות: בדיקה ואתר חי
+
+שתי סביבות נפרדות, כדי לבדוק שינויים בלי לפגוע בנתונים האמיתיים:
+
+| | בדיקה | אתר חי |
+|---|---|---|
+| הרצה | `npm run dev` / `localhost` | Netlify (מ-`main`) |
+| בסיס נתונים | פרויקט Supabase נפרד | הפרויקט הראשי |
+| מפתחות | `.env.development.local` | `.env` מקומי + משתני סביבה ב-Netlify |
+
+הקמת סביבת בדיקה: ליצור פרויקט Supabase שני, להריץ בו את `supabase/schema.sql`, לכבות שם **Confirm email** (כדי להירשם עם אימייל פיקטיבי), ולהכניס את הכתובת ומפתח ה-anon שלו ל-`.env.development.local`.
+**זרימה:** שינוי בענף נפרד ← בדיקה ב-`localhost` ← אישור ← הרצת שינוי הסכמה בפרויקט החי ← מיזוג ל-`main` (מתפרסם אוטומטית).
+
 ## עבודה שוטפת
 
 ```

@@ -12,9 +12,9 @@ Stack: React 18 + Vite, `@supabase/supabase-js`, hosted on Netlify. Code: github
 
 1. Read `CLAUDE.md` (rules and pitfalls) and the relevant part of `SPEC.md` (decisions and behavior). `README.md` has run, setup and deploy steps.
 2. Answer the user in **Hebrew**, short and clear. If a request is ambiguous, ask: several decisions were made on purpose (below).
-3. Change the code, then `npm run build`, then check it in the browser (the preview server is `mypa` in `.claude/launch.json`, port 5173).
+3. Work on a **feature branch**. Change the code, then `npm run build`, then check it in the browser (preview server `mypa`, port 5173). `npm run dev` uses the separate **dev Supabase project** (`.env.development.local`), never the live data.
 4. When the user **confirms a feature works**, update **both** `SPEC.md` and `CLAUDE.md`. Until then do not treat the docs as final.
-5. Commit with the attribution line from the session. Push only when asked (a push to `main` redeploys the live site).
+5. Commit with the attribution line from the session. **Never merge or push to `main` without the user's explicit OK** (it redeploys the live site). Schema changes run on the dev project first, on the live project only right before an approved release.
 
 ## Decisions that must not be undone without asking
 
@@ -24,6 +24,7 @@ Stack: React 18 + Vite, `@supabase/supabase-js`, hosted on Netlify. Code: github
 - **Statuses and tags are optional columns** (`select`, `tags`), not mandatory fields. Priority is a built-in column that may be empty.
 - **Icons come from local keyword rules** (`ICON_RULES`, no AI). No match: tasks 📝; categories 🏷️ beside 📁; tags/status options none. First matching rule wins, so specific rules go first.
 - **Never create an account in the user's Supabase project to test.** Sign-up data goes to supabase.co, so ask her to sign up and test, and ask her to describe what she sees.
+- **AI calls (planned) go through a server function (Supabase Edge Function) holding the Anthropic key as a secret**; never a key in the browser, git or any `VITE_*` variable. Suggestions come first from the user's own tags/priorities/categories; new ones are flagged "new". AI-set values are marked ✨ and approved or edited by the user (`tasks.ai`).
 - **Never use or accept the `service_role` / secret key.** The anon key is public by design; Row Level Security (`supabase/schema.sql`) is the real protection. Every new table needs RLS with `owner = auth.uid()`.
 - Avoid very new emoji (Emoji 13+): they render as empty boxes on Windows 10.
 
@@ -46,6 +47,7 @@ Stack: React 18 + Vite, `@supabase/supabase-js`, hosted on Netlify. Code: github
 - **`flush()` in `store.js`:** never clear `flushing` inside the async function itself; use `run().finally(...)`. Doing it inside froze saving forever after an empty flush.
 - **First login lock:** filling a new account only if `cloud.claimInit` succeeds; otherwise two tabs duplicate all data.
 - **Ids are UUIDs** from `uid()`; `crypto.randomUUID` does not exist on plain http.
+- **New table/column:** update `schema.sql`, `cloud.js` conversions, and the `SCHEMA_OUTDATED` probe in `fetchAll`.
 - **Table rows** are rendered by a function (`renderNode`), not a nested component, so inputs keep focus.
 - **Testing:** `import('/src/store.js')` in the console creates a separate module copy and changes nothing on screen. The data is in the cloud and belongs to the user, so verify through the UI; if you need her account behavior, ask her.
 - **Saving feedback must be honest:** the sidebar shows "✓ הכל נשמר" only after a real successful push; errors show the real message.
