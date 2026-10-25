@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { actions, useStore, useSyncStatus, getState, TABLE_COLORS } from './store.js';
+import { actions, useStore, useSyncStatus, useUndo, getState, TABLE_COLORS } from './store.js';
 import TodayView from './TodayView.jsx';
 import TableView from './TableView.jsx';
 import GraphView from './GraphView.jsx';
@@ -12,6 +12,18 @@ import BrainModal from './BrainModal.jsx';
 import { SplitBanner, SplitModal, GroupModal } from './CategoryModals.jsx';
 import { Modal, EmojiGrid, IconPicker } from './components.jsx';
 
+
+// "deleted · undo": shown for a few seconds after a delete
+function UndoToast() {
+  const u = useUndo();
+  if (!u) return null;
+  return (
+    <div className="toast undo-toast" role="status">
+      <span className="grow">🗑 {u.label}</span>
+      <button className="link" onClick={actions.undo}>ביטול</button>
+    </div>
+  );
+}
 
 export default function App({ email, userId, imported, onSignOut }) {
   const s = useStore();
@@ -124,6 +136,7 @@ export default function App({ email, userId, imported, onSignOut }) {
       {groupId && <GroupModal id={groupId} onClose={() => setGroupId(null)} onSplit={(parentId) => setSplit({ tableId, parentId })} />}
       {split && <SplitModal tableId={split.tableId} parentId={split.parentId} manual={split.manual} onClose={() => setSplit(null)} />}
       {taskId && <TaskModal taskId={taskId} userId={userId} onClose={() => setTaskId(null)} />}
+      <UndoToast />
       {suggestOpen && table && <SuggestModal tableId={tableId} onClose={() => setSuggestOpen(false)} />}
       {planOpen && <PlanModal onClose={() => setPlanOpen(false)} />}
       {rulesOpen && <RulesModal onClose={() => setRulesOpen(false)} />}

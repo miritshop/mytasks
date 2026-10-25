@@ -372,3 +372,18 @@ tr.drop-bad > td { background: rgba(229, 86, 109, 0.16) !important; }
 .root-zone { position: fixed; z-index: 90; bottom: 18px; inset-inline: 0; margin-inline: auto; width: min(420px, 90vw); text-align: center; padding: 14px; border-radius: 16px; background: var(--card); border: 2px dashed var(--primary); color: var(--primary); font-weight: 700; box-shadow: var(--shadow); }
 .root-zone.active { background: var(--primary); color: #fff; border-style: solid; }
 .root-zone.bad { border-color: var(--danger); color: var(--danger); }
+
+/* delete, selection, undo */
+.mini.del { opacity: 0.55; }
+.mini.del:hover { opacity: 1; background: #ffe4e8; }
+.undo-toast { display: flex; align-items: center; gap: 14px; cursor: default; bottom: 84px; }
+.undo-toast .link { color: #ffd98a; font-size: 16px; }
+.btn.on { background: var(--primary); color: #fff; }
+.sel-box { width: 22px; height: 22px; flex: none; accent-color: var(--primary); }
+tr.row-selected > td { background: rgba(124, 108, 240, 0.18) !important; }
+.sel-bar-fixed { position: fixed; z-index: 70; bottom: 12px; inset-inline: 12px; margin-inline: auto; max-width: 640px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border: 2px solid var(--primary); border-radius: 18px; box-shadow: 0 10px 34px rgba(0, 0, 0, 0.28); }
+.sel-bar-fixed .list-select { max-width: 150px; }
+@media (pointer: coarse) {
+  .cell-input.title { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .mini { width: 36px; height: 36px; }
+}

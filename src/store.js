@@ -131,6 +131,19 @@ const saveLocalUI = () => {
   try { localStorage.setItem(uiKey(), JSON.stringify({ tableId: state.ui.tableId, view: state.ui.view })); } catch {}
 };
 
+// ---------- undo for deletions ----------
+// A deleted item disappears from the screen at once, but for a few seconds it can be brought back.
+// Until that time passes the server is NOT told to delete it ("held"), so its images are not removed either.
+const UNDO_MS = 8000;
+let held = null;      // { tasks, tables } removed locally, still kept on the server
+let undoState = null; // { label, snapshot: { tasks, tables } }
+let undoTimer = null;
+const undoSubs = new Set();
+const setUndo = (u) => { undoState = u; undoSubs.forEach((f) => f()); };
+export const useUndo = () =>
+  useSyncExternalStore((cb) => { undoSubs.add(cb); return () => undoSubs.delete(cb); }, () => undoState);
+const withHeld = (s) => (held ? { ...s, tasks: { ...held.tasks, ...s.tasks }, tables: { ...held.tables, ...s.tables } } : s);
+
 let timer = null;
 let flushing = null;
 let again = false;
@@ -142,13 +155,16 @@ export function flush() {
   if (flushing) { again = true; return flushing; }
   const run = async () => {
     try {
+      let done = null;
       do {
         again = false;
         const snapshot = state;
-        const ops = cloud.diff(synced, snapshot);
+        const effective = withHeld(snapshot); // items deleted a moment ago still count as present on the server
+        const ops = cloud.diff(synced, effective);
         if (!ops.empty) { setSync({ status: 'saving' }); await cloud.push(ops, userId); }
-        synced = snapshot;
-      } while (again || synced !== state);
+        synced = effective;
+        done = snapshot;
+      } while (again || done !== state);
       setSync({ status: 'idle', error: '' });
       return true;
     } catch (e) {
@@ -276,6 +292,25 @@ const removeTaskInner = (d, id) => {
   if (t.subTableId) removeTableInner(d, t.subTableId);
   delete d.tasks[id];
   Object.values(d.tasks).forEach((x) => { x.links = x.links.filter((l) => l !== id); });
+};
+
+// Delete a category but keep what is inside it (it moves up one level)
+const ungroupInner = (d, id) => {
+  const g = d.tasks[id];
+  if (!g) return;
+  Object.values(d.tasks).forEach((x) => { if (x.parentId === id) x.parentId = g.parentId; x.links = x.links.filter((l) => l !== id); });
+  delete d.tasks[id];
+};
+// Move an item into a category (null = main list). Same list only, and never into itself or its own contents.
+const reparentInner = (d, id, parentId) => {
+  const t = d.tasks[id];
+  if (!t) return;
+  if (parentId) {
+    for (let p = d.tasks[parentId]; p; p = d.tasks[p.parentId]) if (p.id === id) return;
+    if (!d.tasks[parentId] || d.tasks[parentId].tableId !== t.tableId) return;
+  }
+  t.parentId = parentId || null;
+  if (t.ai) delete t.ai.parent;
 };
 
 // A value the user changes by hand is no longer "set by AI": drop its mark.
@@ -624,22 +659,8 @@ Object.assign(actions, {
     return g.id;
   },
   // delete the category but keep what's inside (moves up one level)
-  ungroup: (id) => commit((d) => {
-    const g = d.tasks[id];
-    if (!g) return;
-    Object.values(d.tasks).forEach((x) => { if (x.parentId === id) x.parentId = g.parentId; x.links = x.links.filter((l) => l !== id); });
-    delete d.tasks[id];
-  }),
-  reparent: (id, parentId) => commit((d) => {
-    const t = d.tasks[id];
-    if (!t) return;
-    if (parentId) {
-      for (let p = d.tasks[parentId]; p; p = d.tasks[p.parentId]) if (p.id === id) return; // no cycles
-      if (!d.tasks[parentId] || d.tasks[parentId].tableId !== t.tableId) return;
-    }
-    t.parentId = parentId || null;
-    if (t.ai) delete t.ai.parent;
-  }),
+  ungroup: (id) => commit((d) => ungroupInner(d, id)),
+  reparent: (id, parentId) => commit((d) => reparentInner(d, id, parentId)),
   applySplit: (tableId, parentId, groups) => commit((d) => {
     groups.forEach((g) => {
       const ids = g.taskIds.filter((id) => d.tasks[id]);
@@ -685,3 +706,64 @@ export function parseSplit(txt, tableId, parentId) {
   if (!groups.length) throw new Error('empty');
   return groups;
 }
+
+// ---------- deleting with undo, and actions on several items at once ----------
+function registerUndo(before, label) {
+  const changed = {};
+  const removedTasks = {};
+  Object.entries(before.tasks).forEach(([id, t]) => {
+    const now = state.tasks[id];
+    if (!now) { removedTasks[id] = t; changed[id] = t; }
+    else if (JSON.stringify(now) !== JSON.stringify(t)) changed[id] = t; // moved children, cleaned links
+  });
+  const removedTables = {};
+  Object.entries(before.tables).forEach(([id, tb]) => { if (!state.tables[id]) removedTables[id] = tb; });
+  if (!Object.keys(changed).length && !Object.keys(removedTables).length) return;
+  clearTimeout(undoTimer);
+  held = { tasks: removedTasks, tables: removedTables };
+  setUndo({ label, snapshot: { tasks: changed, tables: removedTables } });
+  undoTimer = setTimeout(finishUndo, UNDO_MS);
+}
+
+// the undo window is over (or was dismissed): from now on the deletion is real
+export function finishUndo() {
+  clearTimeout(undoTimer);
+  held = null;
+  setUndo(null);
+  schedule();
+}
+
+// bring back what was just deleted
+export function undoLast() {
+  if (!undoState) return;
+  const { snapshot } = undoState;
+  clearTimeout(undoTimer);
+  commit((d) => {
+    Object.values(snapshot.tables).forEach((tb) => { d.tables[tb.id] = structuredClone(tb); });
+    Object.values(snapshot.tasks).forEach((t) => { d.tasks[t.id] = structuredClone(t); });
+  });
+  held = null;
+  setUndo(null);
+}
+
+Object.assign(actions, {
+  // mode 'delete': remove the items with everything inside. mode 'ungroup': categories are dissolved
+  // (their contents stay), other items are deleted. Either way it can be undone for a few seconds.
+  removeItems: (ids, mode = 'delete') => {
+    const before = state;
+    const first = before.tasks[ids[0]];
+    const label = ids.length > 1 ? `נמחקו ${ids.length} פריטים`
+      : mode === 'ungroup' ? `פורקה התיקייה "${first?.title || ''}"` : `נמחק: "${first?.title || ''}"`;
+    commit((d) => ids.forEach((id) => (mode === 'ungroup' && d.tasks[id]?.isGroup ? ungroupInner(d, id) : removeTaskInner(d, id))));
+    registerUndo(before, label);
+  },
+  undo: undoLast,
+  reparentMany: (ids, parentId) => commit((d) => ids.forEach((id) => reparentInner(d, id, parentId))),
+  setDoneMany: (ids, done) => commit((d) => ids.forEach((id) => { if (d.tasks[id] && !d.tasks[id].isGroup) d.tasks[id].done = done; })),
+  setWhenMany: (ids, kind) => commit((d) => ids.forEach((id) => {
+    const t = d.tasks[id];
+    if (!t || t.isGroup) return;
+    Object.assign(t, whenFields(kind));
+    if (t.ai) delete t.ai.when;
+  })),
+});

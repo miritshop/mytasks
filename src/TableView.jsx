@@ -1,13 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { actions, useStore, guessIcon, descendantIds, autoGroupIcon } from './store.js';
+import { actions, useStore, guessIcon, descendantIds, autoGroupIcon, groupOptions } from './store.js';
 import { resolveDrop } from './dnd.js';
-import { Check, Cell, ColumnModal, PriorityCell, EstimateCell, WhenCell, IconPicker, AiMark, hasAi } from './components.jsx';
+import { Modal, Check, Cell, ColumnModal, PriorityCell, EstimateCell, WhenCell, IconPicker, AiMark, hasAi } from './components.jsx';
 
 export default function TableView({ tableId, openTask, onSplit, onAi }) {
   const s = useStore();
   const table = s.tables[tableId];
   const [title, setTitle] = useState('');
   const [colModal, setColModal] = useState(null); // null | 'new' | column
+
+  // ---- selection mode (long press on a phone, or the "בחירה" button) ----
+  const coarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches; // a phone / tablet
+  const [selMode, setSelMode] = useState(false);
+  const [sel, setSel] = useState(() => new Set());
+  const [delAsk, setDelAsk] = useState(null); // ids waiting for "delete with contents or dissolve?"
+  const lp = useRef({ timer: null, fired: false, x: 0, y: 0 });
+  const toggleSel = (id) => setSel((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const exitSel = () => { setSelMode(false); setSel(new Set()); };
+  const lpCancel = () => clearTimeout(lp.current.timer);
+  const lpStart = (e, id) => {
+    if (selMode) return;
+    lp.current.fired = false; lp.current.x = e.clientX; lp.current.y = e.clientY;
+    clearTimeout(lp.current.timer);
+    lp.current.timer = setTimeout(() => { lp.current.fired = true; setSelMode(true); setSel(new Set([id])); }, 500);
+  };
+  const lpMove = (e) => { if (Math.hypot(e.clientX - lp.current.x, e.clientY - lp.current.y) > 10) lpCancel(); };
 
   // ---- drag and drop (pointer based, so it works with a mouse and with a finger) ----
   const [drag, setDrag] = useState(null); // { id, sx, sy, x, y, started, overId }
@@ -72,9 +89,40 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
   const destName = destId === undefined ? '' : destId === null ? 'הרשימה הראשית' : s.tasks[destId]?.title || '';
   const dragged = drag?.started ? s.tasks[drag.id] : null;
   const rowCls = (id, base = '') => [base,
+    selMode && sel.has(id) ? 'row-selected' : '',
     dragged && drag.id === id ? 'dragging-row' : '',
     destId === id ? 'drop-dest' : '',
     dropRes && !dropRes.ok && drag.overId === id ? 'drop-bad' : ''].filter(Boolean).join(' ');
+  const hasContent = (id) => s.tasks[id]?.isGroup && descendantIds(s, id).length > 0;
+  // delete now (can be undone); a category with things inside asks what to do with them first
+  const askDelete = (ids) => {
+    if (ids.some(hasContent)) setDelAsk(ids); else actions.removeItems(ids, 'delete');
+  };
+  const lead = (id) => (selMode
+    ? <input type="checkbox" className="sel-box" checked={sel.has(id)} onChange={() => toggleSel(id)} aria-label="בחירה" />
+    : handle(id));
+  // the title: double click opens; on a phone a tap opens and a long press starts selecting
+  const titleProps = (t) => ({
+    readOnly: coarse || selMode,
+    onClick: () => {
+      if (lp.current.fired) { lp.current.fired = false; return; } // the click that ends a long press
+      if (selMode) toggleSel(t.id); else if (coarse) openTask(t.id);
+    },
+    onPointerDown: coarse ? (e) => lpStart(e, t.id) : undefined,
+    onPointerMove: coarse ? lpMove : undefined,
+    onPointerUp: lpCancel,
+    onPointerLeave: lpCancel,
+    onPointerCancel: lpCancel,
+    onContextMenu: coarse ? (e) => e.preventDefault() : undefined,
+  });
+  const rowProps = (t) => ({
+    'data-rowid': t.id,
+    onDoubleClick: (e) => {
+      if (selMode || e.target.closest('button, select, textarea, label, .tags-cell, .icon-pick, .est, input:not(.title)')) return;
+      openTask(t.id);
+    },
+    onClick: selMode ? (e) => { if (!e.target.closest('button, select, input, label, .icon-pick')) toggleSel(t.id); } : undefined,
+  });
   const handle = (id) => <span className="drag-handle" title="גרירה להעברה" onPointerDown={(e) => startDrag(e, id)}>⠿</span>;
 
   const all = Object.values(s.tasks).filter((t) => t.tableId === tableId);
@@ -99,17 +147,18 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
       const done = tasks.filter((x) => x.done).length;
       return (
         <React.Fragment key={t.id}>
-          <tr className={rowCls(t.id, 'group-row')} data-rowid={t.id}>
+          <tr className={rowCls(t.id, 'group-row')} {...rowProps(t)}>
             <td colSpan={table.columns.length + 5} style={pad}>
               <div className="row">
-                {handle(t.id)}
+                {lead(t.id)}
                 <button className="mini" title={t.collapsed ? 'פתח' : 'סגור'} onClick={() => actions.updateTask(t.id, { collapsed: !t.collapsed })}>{t.collapsed ? '◂' : '▾'}</button>
                 <span className="folder" title="קטגוריה">📁</span>
                 <IconPicker value={t.icon === '📁' ? '' : t.icon} auto={autoGroupIcon(t.title)} onChange={(i) => actions.updateTask(t.id, { icon: i })} />
-                <input className="cell-input title group-title" value={t.title} onChange={(e) => actions.updateTask(t.id, { title: e.target.value })} />
+                <input className="cell-input title group-title" value={t.title} onChange={(e) => actions.updateTask(t.id, { title: e.target.value })} {...titleProps(t)} />
                 <span className="count">{done}/{tasks.length}</span>
                 <button className="mini" title="הוסף משימה לקטגוריה" onClick={() => openTask(actions.addTask(tableId, 'משימה חדשה', { parentId: t.id }))}>＋</button>
                 <button className="mini" title="עריכת קטגוריה" onClick={() => openTask(t.id)}>⋯</button>
+                <button className="mini del" title="מחיקה" onClick={() => askDelete([t.id])}>🗑</button>
               </div>
             </td>
           </tr>
@@ -119,19 +168,20 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
     }
     return (
       <React.Fragment key={t.id}>
-        <tr className={rowCls(t.id, t.done ? 'done' : '')} data-rowid={t.id}>
+        <tr className={rowCls(t.id, t.done ? 'done' : '')} {...rowProps(t)}>
           <td className="title-cell" style={pad}>
             <div className="row">
-              {handle(t.id)}
+              {lead(t.id)}
               <Check done={t.done} onChange={() => actions.toggleDone(t.id)} />
               <IconPicker value={t.icon} auto={guessIcon(t.title)} onChange={(i) => actions.updateTask(t.id, { icon: i })} />
-              <input className="cell-input title" value={t.title} onChange={(e) => actions.updateTask(t.id, { title: e.target.value })} />
+              <input className="cell-input title" value={t.title} onChange={(e) => actions.updateTask(t.id, { title: e.target.value })} {...titleProps(t)} />
               {t.subTableId && (
                 <button className="mini" title="פתח טבלה" onClick={() => actions.setUI({ tableId: t.subTableId })}>📂</button>
               )}
               {t.ai?.parent && <AiMark title="הועברה לקטגוריה על ידי AI" />}
               {hasAi(t) && <button className="mini approve" title="אישור כל הערכים שהציע ה-AI" onClick={() => actions.approveAi(t.id)}>✓</button>}
               <button className="mini" title="פרטים" onClick={() => openTask(t.id)}>⋯</button>
+              <button className="mini del" title="מחיקה" onClick={() => askDelete([t.id])}>🗑</button>
             </div>
           </td>
           <td><WhenCell task={t} /></td>
@@ -148,7 +198,10 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
   const roots = kidsOf(null);
   return (
     <div className="table-wrap">
-      {onAi && <div className="table-tools"><button className="btn soft small" onClick={onAi}>✨ הצעות AI</button></div>}
+      <div className="table-tools">
+        {onAi && <button className="btn soft small" onClick={onAi}>✨ הצעות AI</button>}
+        <button className={`btn soft small ${selMode ? 'on' : ''}`} onClick={() => (selMode ? exitSel() : setSelMode(true))}>☑ בחירה</button>
+      </div>
       <table className="grid">
         <thead>
           <tr>
@@ -177,6 +230,39 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
         </tbody>
       </table>
       {roots.length === 0 && <p className="empty">אין עדיין משימות. התחילי מהשורה למעלה 🌱</p>}
+      {selMode && (
+        <div className="sel-bar-fixed">
+          <b className="count">{sel.size} נבחרו</b>
+          <button className="btn soft small" disabled={!sel.size} onClick={() => { askDelete([...sel]); exitSel(); }}>🗑 מחיקה</button>
+          <button className="btn soft small" disabled={!sel.size} onClick={() => { actions.setDoneMany([...sel], true); exitSel(); }}>✓ בוצע</button>
+          <select className="list-select" value="" disabled={!sel.size} aria-label="העברה לתיקייה"
+            onChange={(e) => { if (e.target.value) { actions.reparentMany([...sel], e.target.value === '__root' ? null : e.target.value); exitSel(); } }}>
+            <option value="">📁 העברה ל…</option>
+            <option value="__root">🏠 הרשימה הראשית</option>
+            {groupOptions(s, tableId).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+          <select className="list-select" value="" disabled={!sel.size} aria-label="מתי"
+            onChange={(e) => { if (e.target.value) { actions.setWhenMany([...sel], e.target.value === '__none' ? null : e.target.value); exitSel(); } }}>
+            <option value="">⏰ מתי…</option>
+            <option value="today">☀️ היום</option><option value="week">📅 השבוע</option>
+            <option value="next">⏭️ בשבוע הבא</option><option value="soon">🔜 בקרוב</option>
+            <option value="__none">בלי מועד</option>
+          </select>
+          <button className="btn primary small" onClick={exitSel}>סיום</button>
+        </div>
+      )}
+      {delAsk && (
+        <Modal title="מחיקת תיקייה עם תוכן" onClose={() => setDelAsk(null)}>
+          <p className="lead">
+            {delAsk.filter(hasContent).map((id) => s.tasks[id].title).join(', ')}: יש בה {delAsk.filter(hasContent).reduce((n, id) => n + descendantIds(s, id).length, 0)} פריטים. מה לעשות איתם?
+          </p>
+          <div className="stack">
+            <button className="btn danger" onClick={() => { actions.removeItems(delAsk, 'delete'); setDelAsk(null); }}>🗑 מחיקה עם התוכן</button>
+            <button className="btn soft" onClick={() => { actions.removeItems(delAsk, 'ungroup'); setDelAsk(null); }}>📂 פירוק: הפריטים נשארים ועולים רמה</button>
+            <button className="btn" onClick={() => setDelAsk(null)}>ביטול</button>
+          </div>
+        </Modal>
+      )}
       {dragged && (
         <>
           <div className={`root-zone ${destId === null ? 'active' : ''} ${dropRes && !dropRes.ok && drag.overId === 'root' ? 'bad' : ''}`} data-rootzone>
