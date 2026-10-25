@@ -25,6 +25,8 @@ Stack: React 18 + Vite, `@supabase/supabase-js`, hosted on Netlify. Code: github
 - **Icons come from local keyword rules** (`ICON_RULES`, no AI). No match: tasks 📝; categories 🏷️ beside 📁; tags/status options none. First matching rule wins, so specific rules go first.
 - **Never create an account in the user's Supabase project to test.** Sign-up data goes to supabase.co, so ask her to sign up and test, and ask her to describe what she sees.
 - **AI calls (planned) go through a server function (Supabase Edge Function) holding the Anthropic key as a secret**; never a key in the browser, git or any `VITE_*` variable. Suggestions come first from the user's own tags/priorities/categories; new ones are flagged "new". AI-set values are marked ✨ and approved or edited by the user (`tasks.ai`).
+- **"When" (today / week / next / soon / date):** all logic lives in `src/when.js`; weeks are Sunday-Saturday; periods run out and show as overdue (Today screen asks what to do); "next week" rolls into "this week". Never write `task.today` directly: use `actions.setWhen` or `updateTask({ today })`.
+- **Deploying to the dev Supabase project is mine** (`npx supabase db query --linked --project-ref <dev> -f supabase/schema.sql`, `npx supabase functions deploy ai --project-ref <dev> --use-api`; check `supabase/.temp/project-ref` is the dev ref). **The live project only with the user's explicit OK**, and never print secret values.
 - **Never use or accept the `service_role` / secret key.** The anon key is public by design; Row Level Security (`supabase/schema.sql`) is the real protection. Every new table needs RLS with `owner = auth.uid()`.
 - Avoid very new emoji (Emoji 13+): they render as empty boxes on Windows 10.
 
@@ -37,7 +39,8 @@ Stack: React 18 + Vite, `@supabase/supabase-js`, hosted on Netlify. Code: github
 | Login, sign-up, password reset | `src/Root.jsx` |
 | Layout and sidebar | `src/App.jsx` |
 | Views | `TodayView`, `TableView`, `GraphView`, `FilterView` (`src/*.jsx`) |
-| Dialogs | `TaskModal`, `CategoryModals` (split banner, split, category), `BrainModal`, `Attachments` |
+| Dialogs | `TaskModal`, `CategoryModals` (split banner, split, category), `BrainModal`, `Attachments`, `Rules` (personal AI rules), `SuggestModal` (AI suggestions), `PlanModal` (plan my day) |
+| When logic, AI client | `src/when.js`, `src/ai.js`; server side `supabase/functions/ai/index.ts` |
 | Shared UI, columns, tags, emoji picker | `src/components.jsx`, `src/emojis.js` |
 | Database schema and RLS | `supabase/schema.sql` (idempotent; user runs it in the SQL Editor) |
 

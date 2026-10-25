@@ -9,3 +9,5 @@ dist/
 .claude/skills/*
 !.claude/skills/mypa
 *.local
+supabase/.temp/
+supabase/.branches/

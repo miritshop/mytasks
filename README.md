@@ -54,6 +54,22 @@ VITE_SUPABASE_ANON_KEY=<anon key>
 הקמת סביבת בדיקה: ליצור פרויקט Supabase שני, להריץ בו את `supabase/schema.sql`, לכבות שם **Confirm email** (כדי להירשם עם אימייל פיקטיבי), ולהכניס את הכתובת ומפתח ה-anon שלו ל-`.env.development.local`.
 **זרימה:** שינוי בענף נפרד ← בדיקה ב-`localhost` ← אישור ← הרצת שינוי הסכמה בפרויקט החי ← מיזוג ל-`main` (מתפרסם אוטומטית).
 
+## AI (הצעות ותכנון יום)
+
+ה-AI עובד דרך פונקציית שרת ב-Supabase (`supabase/functions/ai`) שמחזיקה את מפתח Anthropic כסוד. המפתח לעולם לא בדפדפן או בגיט.
+
+הקמה בסביבה (בדיקה או חי):
+1. להריץ את `supabase/schema.sql` ב-SQL Editor (כולל `ai_usage` ו-`take_ai_quota`).
+2. Supabase > **Edge Functions** > **Secrets**: `ANTHROPIC_API_KEY` (חובה). אופציונלי: `AI_ALLOWED_EMAILS`, `AI_DAILY_LIMIT` (ברירת מחדל 40), `AI_MODEL_FAST`, `AI_MODEL_SMART`.
+3. לפרסם את הפונקציה: בדשבורד (**Edge Functions** > **Deploy a new function** > **Via Editor**, שם `ai`), או בפקודה:
+```bash
+npx supabase login
+npx supabase link --project-ref <PROJECT_REF>
+npx supabase db query --linked --project-ref <PROJECT_REF> -f supabase/schema.sql
+npx supabase functions deploy ai --project-ref <PROJECT_REF> --use-api
+```
+ב-Anthropic Console מומלץ להגדיר תקרת הוצאה חודשית נמוכה.
+
 ## עבודה שוטפת
 
 ```

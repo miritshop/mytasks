@@ -37,6 +37,9 @@ npm run build    # בדיקה שהכל מתקמפל
 | כל הדיבור עם בסיס הנתונים: המרות שורות, טעינה, `diff` / `push`, תמונות | `src/cloud.js`, `src/supabase.js` |
 | כניסה, הרשמה, איפוס סיסמה, שמירת סשן | `src/Root.jsx` |
 | תמונות במשימה | `src/Attachments.jsx` |
+| לוגיקת "מתי" (היום/השבוע/...; איחור; סינון) | `src/when.js` (פונקציות טהורות) |
+| חיבור ה-AI מהדפדפן ובניית הבקשות | `src/ai.js`; מסכים: `src/SuggestModal.jsx`, `src/PlanModal.jsx` |
+| פונקציית השרת של ה-AI (Anthropic, מפתח כסוד) | `supabase/functions/ai/index.ts` |
 | "הכללים שלי" (כללים אישיים ל-AI) | `src/Rules.jsx` (נתונים: `rules`, `ruleOrder` ב-`store.js`, טבלת `ai_rules`) |
 | סכמת בסיס הנתונים ו-RLS (מריצים ב-SQL Editor של Supabase) | `supabase/schema.sql` |
 | רשימת האימוג'י בבורר | `src/emojis.js` |
@@ -58,6 +61,10 @@ npm run build    # בדיקה שהכל מתקמפל
 - **שדה או טבלה חדשים בבסיס הנתונים:** עדכן את `supabase/schema.sql` (אידמפוטנטי), את ההמרות ב-`cloud.js`, **ואת בדיקת ה-`SCHEMA_OUTDATED` ב-`fetchAll`** (היא "בודקת" שהעמודות/הטבלאות החדשות קיימות ומציגה הודעה ברורה במקום לאבד נתונים).
 - **סימוני AI (`tasks.ai`):** ערך שנקבע ידנית חייב להסיר את הסימון שלו (`clearAiMarks`, `setVal`, `reparent`). הצעות AI יוחלו דרך פעולה ייעודית שמסמנת, לא דרך `updateTask` שמנקה סימונים.
 - **AI:** בעתיד הקריאה ל-Anthropic רק מפונקציית שרת (Edge Function) עם מפתח כסוד. לעולם לא מפתח בדפדפן, בגיט או ב-`VITE_*` (כל `VITE_*` נכנס לאתר).
+- **"מתי":** כל חישוב של תקופה, איחור וסינון בקובץ `src/when.js` בלבד. **אל תכתוב ל-`task.today` ישירות:** השתמש ב-`actions.setWhen(id, kind, date)` או ב-`updateTask(id, { today })` (שמנתב לאותה לוגיקה), כדי ש-`today`, `whenKind` ו-`whenDate` יישארו עקביים. שבוע הוא ראשון עד שבת.
+- **שינוי שמוסיף שדה שצריך להמיר בנתונים קיימים** (כמו `whenField`) נכנס ל-`migrate`, וצריך לרוץ גם ב-`reset` וב-`importJSON` (הם קוראים ל-`migrate`).
+- **פונקציית ה-AI:** כל שינוי ב-`supabase/functions/ai/index.ts` דורש פרסום מחדש. בדוק את הלוגיקה (`cleanSuggestInput`, `validateSuggest`, `handle`...) עם תלויות מדומות לפני פרסום. שינוי מבנה הבקשה חייב להישאר תואם ל-`src/ai.js`.
+- **פרסום לבדיקה (dev) הוא של Claude, פרסום לחי הוא של המשתמשת:** `npx supabase db query --linked --project-ref <dev> -f supabase/schema.sql` ו-`npx supabase functions deploy ai --project-ref <dev> --use-api`. בדוק ש-`supabase/.temp/project-ref` הוא ה-dev. **אל תריץ מול הפרויקט החי בלי אישור מפורש.** אל תדפיס ערכי סודות, ואל תבקש טוקנים או סיסמאות.
 - **אל תיכשל בשקט:** שמירה שנחסמת בגלל שדה חסר חייבת להציג הודעה או למלא ברירת מחדל (כמו שם העמודה ב-`ColumnModal`).
 - **מיגרציות נתונים:** שינוי שמוסיף אפשרויות לנתונים קיימים נעשה ב-`migrate` ב-`store.js`, פעם אחת (דגל ב-`state.migrations`), ורק מוסיף ולא מוחק.
 
