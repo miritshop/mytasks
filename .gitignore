@@ -8,3 +8,4 @@ dist/
 !.claude/skills
 .claude/skills/*
 !.claude/skills/mypa
+*.local
