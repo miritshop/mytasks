@@ -387,3 +387,8 @@ tr.row-selected > td { background: rgba(124, 108, 240, 0.18) !important; }
   .cell-input.title { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .mini { width: 36px; height: 36px; }
 }
+
+/* wider task column, narrow delete column */
+.grid td.title-cell, .grid th.title-cell { min-width: 560px; }
+.grid .del-cell { min-width: 44px; width: 44px; text-align: center; padding-inline: 2px; }
+@media (max-width: 760px) { .grid td.title-cell, .grid th.title-cell { min-width: 380px; } }

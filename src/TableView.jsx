@@ -93,6 +93,13 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
     dragged && drag.id === id ? 'dragging-row' : '',
     destId === id ? 'drop-dest' : '',
     dropRes && !dropRes.ok && drag.overId === id ? 'drop-bad' : ''].filter(Boolean).join(' ');
+  // column order: task, when, status, tags, priority, delete, then time and everything else
+  const statusCols = table.columns.filter((c) => c.type === 'select' && c.name === 'סטטוס');
+  const tagCols = table.columns.filter((c) => c.type === 'tags');
+  const restCols = table.columns.filter((c) => !statusCols.includes(c) && !tagCols.includes(c));
+  const colTh = (c) => <th key={c.id}><button className="th-btn" onClick={() => setColModal(c)}>{c.name} <span>▾</span></button></th>;
+  const colTd = (c, t) => <td key={c.id}><Cell col={c} task={t} /></td>;
+
   const hasContent = (id) => s.tasks[id]?.isGroup && descendantIds(s, id).length > 0;
   // delete now (can be undone); a category with things inside asks what to do with them first
   const askDelete = (ids) => {
@@ -148,7 +155,7 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
       return (
         <React.Fragment key={t.id}>
           <tr className={rowCls(t.id, 'group-row')} {...rowProps(t)}>
-            <td colSpan={table.columns.length + 5} style={pad}>
+            <td colSpan={table.columns.length + 6} style={pad}>
               <div className="row">
                 {lead(t.id)}
                 <button className="mini" title={t.collapsed ? 'פתח' : 'סגור'} onClick={() => actions.updateTask(t.id, { collapsed: !t.collapsed })}>{t.collapsed ? '◂' : '▾'}</button>
@@ -181,13 +188,15 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
               {t.ai?.parent && <AiMark title="הועברה לקטגוריה על ידי AI" />}
               {hasAi(t) && <button className="mini approve" title="אישור כל הערכים שהציע ה-AI" onClick={() => actions.approveAi(t.id)}>✓</button>}
               <button className="mini" title="פרטים" onClick={() => openTask(t.id)}>⋯</button>
-              <button className="mini del" title="מחיקה" onClick={() => askDelete([t.id])}>🗑</button>
             </div>
           </td>
           <td><WhenCell task={t} /></td>
+          {statusCols.map((c) => colTd(c, t))}
+          {tagCols.map((c) => colTd(c, t))}
           <td><PriorityCell task={t} /></td>
+          <td className="del-cell"><button className="mini del" title="מחיקה" onClick={() => askDelete([t.id])}>🗑</button></td>
           <td><EstimateCell task={t} /></td>
-          {table.columns.map((c) => <td key={c.id}><Cell col={c} task={t} /></td>)}
+          {restCols.map((c) => colTd(c, t))}
           <td />
         </tr>
         {kids.map((k) => renderNode(k, depth + 1))}
@@ -207,18 +216,19 @@ export default function TableView({ tableId, openTask, onSplit, onAi }) {
           <tr>
             <th className="title-cell">משימה</th>
             <th>מתי</th>
+            {statusCols.map(colTh)}
+            {tagCols.map(colTh)}
             <th>עדיפות</th>
+            <th className="del-cell" title="מחיקה">🗑</th>
             <th>זמן</th>
-            {table.columns.map((c) => (
-              <th key={c.id}><button className="th-btn" onClick={() => setColModal(c)}>{c.name} <span>▾</span></button></th>
-            ))}
+            {restCols.map(colTh)}
             <th className="add-col"><button className="mini" title="עמודה חדשה" onClick={() => setColModal('new')}>＋</button></th>
           </tr>
         </thead>
         <tbody>
           {roots.map((t) => renderNode(t, 0))}
           <tr>
-            <td colSpan={table.columns.length + 5}>
+            <td colSpan={table.columns.length + 6}>
               <div className="row add-row">
                 <span className="plus">＋</span>
                 <input value={title} placeholder="משימה חדשה… (Enter להוספה)" onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
